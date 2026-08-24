@@ -9,7 +9,13 @@ import {
   STAGES,
   type Attractor,
   type GameState,
+  type Vec2,
 } from "./game/state";
+
+// How long a failed attempt holds on screen (death flash + the moth visibly
+// pulled into the hazard) before the stage resets on its own. No button to
+// find or learn — losing always resolves itself the same way.
+const RESTART_DELAY = 1.4;
 
 function getCanvas(): HTMLCanvasElement {
   const el = document.querySelector<HTMLCanvasElement>("#scene");
@@ -30,6 +36,14 @@ const state: GameState = createInitialState();
 let camera: Camera = computeCamera(window.innerWidth, window.innerHeight);
 let lastTime = 0;
 let introTime = 0; // drives the idle wobble before the player's first move
+
+let previousPhase = state.phase;
+let phaseTimer = 0;
+
+// Captured the instant the moth is lost, so the death animation can pull it
+// toward the specific hazard that caught it and highlight that hazard.
+let deathHazard: Attractor | null = null;
+let deathMothPos: Vec2 | null = null;
 
 function resize(): void {
   const dpr = window.devicePixelRatio || 1;
@@ -69,6 +83,24 @@ function attractorsFor(current: GameState): Attractor[] {
   return attractors;
 }
 
+// Which hazard actually caught the moth — same inclusion rule as
+// checkOutcome, just naming the culprit instead of only the verdict.
+function findCauseHazard(mothPos: Vec2, hazards: Attractor[]): Attractor | null {
+  for (const hazard of hazards) {
+    const dist = Math.hypot(mothPos.x - hazard.pos.x, mothPos.y - hazard.pos.y);
+    if (dist <= hazard.radius + MOTH_RADIUS) return hazard;
+  }
+  return null;
+}
+
+function resetStage(): void {
+  const stage = STAGES[state.stageIndex];
+  state.moth = { pos: { ...stage.mothStart }, heading: { x: 1, y: 0 }, speed: 0 };
+  state.phase = "playing";
+  deathHazard = null;
+  deathMothPos = null;
+}
+
 function advanceStage(): void {
   const next = STAGES[state.stageIndex + 1];
   state.stageIndex += 1;
@@ -78,6 +110,14 @@ function advanceStage(): void {
 function frame(time: number): void {
   const dt = lastTime ? Math.min((time - lastTime) / 1000, 1 / 20) : 0;
   lastTime = time;
+  const timeSec = time / 1000;
+
+  if (state.phase !== previousPhase) {
+    phaseTimer = 0;
+    previousPhase = state.phase;
+  } else {
+    phaseTimer += dt;
+  }
 
   const stage = STAGES[state.stageIndex];
 
@@ -88,6 +128,8 @@ function frame(time: number): void {
     state.moth = stepMoth(state.moth, attractorsFor(state), stage.followSpeed, stage.maxTurnRate, dt);
     const outcome = checkOutcome(state.moth.pos, stage.hazards, stage.flower, MOTH_RADIUS);
     if (outcome === "lost") {
+      deathMothPos = { ...state.moth.pos };
+      deathHazard = findCauseHazard(state.moth.pos, stage.hazards);
       state.phase = "lost";
     } else if (outcome === "won") {
       stage.flower.bloomed = true;
@@ -97,9 +139,24 @@ function frame(time: number): void {
         advanceStage();
       }
     }
+  } else if (state.phase === "lost") {
+    // Sell the cause: visibly drag the moth the rest of the way into the
+    // hazard that caught it, instead of freezing it mid-air.
+    if (deathHazard && deathMothPos) {
+      const pullT = Math.min(1, phaseTimer / 0.3);
+      state.moth.pos = {
+        x: deathMothPos.x + (deathHazard.pos.x - deathMothPos.x) * pullT,
+        y: deathMothPos.y + (deathHazard.pos.y - deathMothPos.y) * pullT,
+      };
+    }
+    if (phaseTimer >= RESTART_DELAY) resetStage();
   }
 
-  render(ctx, state, STAGES[state.stageIndex], window.innerWidth, window.innerHeight);
+  render(ctx, state, STAGES[state.stageIndex], window.innerWidth, window.innerHeight, {
+    timeSec,
+    phaseTimer,
+    deathHazardPos: deathHazard ? deathHazard.pos : null,
+  });
   requestAnimationFrame(frame);
 }
 
