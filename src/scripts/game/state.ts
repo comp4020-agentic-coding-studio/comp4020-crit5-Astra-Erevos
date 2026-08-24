@@ -10,6 +10,22 @@ export type Phase = "intro" | "playing" | "won" | "lost";
 // hazard only competes with it once the moth is already close.
 export type Attractor = { pos: Vec2; strength: number; radius: number; influenceRadius?: number };
 
+// A hazard's `pos` is its fixed anchor. `motion`, when present, drifts it on a
+// slow closed ellipse around that anchor -- amplitude per axis, angularSpeed
+// in radians/sec, phase to offset where in the cycle it starts -- so its
+// actual position each frame is a pure function of elapsed stage time (see
+// hazards.ts) with nothing to reset by hand when a stage restarts: starting
+// stage time back at 0 already puts every hazard back at the same point in
+// its cycle.
+export type HazardMotion = { amplitude: Vec2; angularSpeed: number; phase?: number };
+export type HazardConfig = {
+  pos: Vec2;
+  strength: number;
+  radius: number;
+  influenceRadius?: number;
+  motion?: HazardMotion;
+};
+
 export type Flower = {
   pos: Vec2;
   radius: number;
@@ -21,7 +37,7 @@ export type StageConfig = {
   name: string;
   mothStart: Vec2;
   flower: Flower;
-  hazards: Attractor[];
+  hazards: HazardConfig[];
   followSpeed: number;
   maxTurnRate: number;
 };
@@ -66,13 +82,102 @@ export const STAGES: StageConfig[] = [
   {
     name: "Cold Glimmer",
     mothStart: { x: 160, y: 560 },
-    flower: { pos: { x: 860, y: 460 }, radius: 42, isGoal: true, bloomed: false },
+    flower: { pos: { x: 860, y: 460 }, radius: 42, isGoal: false, bloomed: false },
     // Sits well clear of the direct start-to-flower line (~210 units) and
     // only pulls within influenceRadius, so flying straight for the flower
     // never brushes it — reaching it at all is a deliberate detour, and a
     // player who notices the tug and steers back out within roughly its
     // radius can still recover the moth.
     hazards: [{ pos: { x: 500, y: 300 }, strength: 1, radius: 40, influenceRadius: 170 }],
+    followSpeed: 340,
+    maxTurnRate: 2.6,
+  },
+  {
+    name: "Drifting Chill",
+    mothStart: { x: 150, y: 500 },
+    flower: { pos: { x: 850, y: 520 }, radius: 42, isGoal: false, bloomed: false },
+    // Same shape as Cold Glimmer's hazard, now drifting a slow ellipse around
+    // its anchor -- same followSpeed/maxTurnRate as every other stage, so the
+    // only new thing being taught is that the safe gap around it isn't fixed,
+    // and a player can always just wait a beat for it to drift clear.
+    hazards: [
+      {
+        pos: { x: 500, y: 350 },
+        strength: 1,
+        radius: 40,
+        influenceRadius: 170,
+        motion: { amplitude: { x: 90, y: 60 }, angularSpeed: 0.35 },
+      },
+    ],
+    followSpeed: 340,
+    maxTurnRate: 2.6,
+  },
+  {
+    name: "Two Flames",
+    mothStart: { x: 150, y: 500 },
+    flower: { pos: { x: 850, y: 500 }, radius: 42, isGoal: false, bloomed: false },
+    // Two hazards flanking the direct line, drifting out of phase with each
+    // other so their danger zones rarely close the middle at the same time --
+    // a route always exists, it just isn't always the same route.
+    hazards: [
+      {
+        pos: { x: 430, y: 300 },
+        strength: 1,
+        radius: 38,
+        influenceRadius: 150,
+        motion: { amplitude: { x: 60, y: 40 }, angularSpeed: 0.4 },
+      },
+      {
+        pos: { x: 620, y: 650 },
+        strength: 1,
+        radius: 38,
+        influenceRadius: 150,
+        motion: { amplitude: { x: 70, y: 50 }, angularSpeed: 0.32, phase: Math.PI },
+      },
+    ],
+    followSpeed: 340,
+    maxTurnRate: 2.6,
+  },
+  {
+    name: "Moon Flower",
+    mothStart: { x: 150, y: 850 },
+    // Visibly the largest, calmest target in the game -- see the isGoal
+    // palette in render.ts's drawFlower -- so its own presence reads as "this
+    // is the end" with no other signal needed.
+    flower: { pos: { x: 850, y: 150 }, radius: 60, isGoal: true, bloomed: false },
+    // Three hazards on staggered drift cycles, each anchored (and given
+    // amplitude) so its influenceRadius can never quite reach the direct
+    // start-to-flower diagonal -- same "flying straight never brushes it"
+    // guarantee Cold Glimmer's single hazard makes, just harder to eyeball
+    // here since that diagonal runs near the world's center, where all three
+    // drift fields sit close enough to feel present. A player who wanders off
+    // the straight line to explore, or overcorrects while dodging one, is who
+    // actually has to deal with them. Same followSpeed/maxTurnRate as every
+    // earlier stage -- difficulty is "more to keep track of," never a
+    // twitchier moth.
+    hazards: [
+      {
+        pos: { x: 190, y: 470 },
+        strength: 1,
+        radius: 40,
+        influenceRadius: 150,
+        motion: { amplitude: { x: 70, y: 55 }, angularSpeed: 0.3 },
+      },
+      {
+        pos: { x: 733, y: 593 },
+        strength: 1,
+        radius: 40,
+        influenceRadius: 150,
+        motion: { amplitude: { x: 60, y: 45 }, angularSpeed: 0.25, phase: 2.1 },
+      },
+      {
+        pos: { x: 500, y: 80 },
+        strength: 1,
+        radius: 40,
+        influenceRadius: 160,
+        motion: { amplitude: { x: 90, y: 50 }, angularSpeed: 0.35, phase: 4.2 },
+      },
+    ],
     followSpeed: 340,
     maxTurnRate: 2.6,
   },

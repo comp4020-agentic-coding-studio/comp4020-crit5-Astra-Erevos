@@ -1,4 +1,5 @@
 import { computeCamera, screenToWorld, type Camera } from "./game/camera";
+import { resolveHazards } from "./game/hazards";
 import { stepMoth } from "./game/moth";
 import { checkOutcome } from "./game/outcome";
 import { render } from "./game/render";
@@ -43,6 +44,10 @@ const state: GameState = createInitialState();
 let camera: Camera = computeCamera(window.innerWidth, window.innerHeight);
 let lastTime = 0;
 let introTime = 0; // drives the idle wobble before the player's first move
+// Seconds elapsed since the current stage entered "playing" -- the only
+// input hazard motion depends on (see hazards.ts), so restarting it at 0 on
+// every stage entry is the entire "reset hazard movement" step.
+let stageTime = 0;
 
 let previousPhase = state.phase;
 let phaseTimer = 0;
@@ -116,12 +121,14 @@ function resetStage(): void {
   state.phase = "playing";
   deathHazard = null;
   deathMothPos = null;
+  stageTime = 0;
 }
 
 function advanceStage(): void {
   const next = STAGES[state.stageIndex + 1];
   state.stageIndex += 1;
   state.moth = { pos: { ...next.mothStart }, heading: state.moth.heading, speed: 0 };
+  stageTime = 0;
 }
 
 function frame(time: number): void {
@@ -137,12 +144,19 @@ function frame(time: number): void {
   }
 
   const stage = STAGES[state.stageIndex];
+  // Resolved fresh every frame from stageTime alone (see hazards.ts) -- used
+  // both for this frame's simulation below and for rendering, so a hazard's
+  // drawn position always matches the one the moth/outcome logic just acted
+  // on, in every phase (frozen along with stageTime once "playing" ends).
+  let hazards = resolveHazards(stage.hazards, stageTime);
 
   if (state.phase === "intro") {
     introTime += dt * 1000;
     state.moth.pos = idleWobble(introTime);
   } else if (state.phase === "playing") {
-    state.moth = stepMoth(state.moth, state.light, stage.hazards, stage.followSpeed, stage.maxTurnRate, dt);
+    stageTime += dt;
+    hazards = resolveHazards(stage.hazards, stageTime);
+    state.moth = stepMoth(state.moth, state.light, hazards, stage.followSpeed, stage.maxTurnRate, dt);
     // The flower's petals (and the moth's own wings) visually reach well past
     // their logical radii once drawn -- see drawFlower/drawMoth in render.ts
     // -- so a player who visibly touches the flower should win, not just one
@@ -150,10 +164,10 @@ function frame(time: number): void {
     // of the check to close that gap; hazard danger geometry (MOTH_RADIUS +
     // hazard.radius) is untouched.
     const visualFlower = { ...stage.flower, radius: stage.flower.radius * FLOWER_VISUAL_OVERSHOOT };
-    const outcome = checkOutcome(state.moth.pos, stage.hazards, visualFlower, MOTH_RADIUS);
+    const outcome = checkOutcome(state.moth.pos, hazards, visualFlower, MOTH_RADIUS);
     if (outcome === "lost") {
       deathMothPos = { ...state.moth.pos };
-      deathHazard = findCauseHazard(state.moth.pos, stage.hazards);
+      deathHazard = findCauseHazard(state.moth.pos, hazards);
       state.phase = "lost";
     } else if (outcome === "won") {
       stage.flower.bloomed = true;
@@ -178,7 +192,7 @@ function frame(time: number): void {
     if (phaseTimer >= RETRY_REVEAL_DELAY) showRetry();
   }
 
-  render(ctx, state, STAGES[state.stageIndex], window.innerWidth, window.innerHeight, {
+  render(ctx, state, { ...stage, hazards }, window.innerWidth, window.innerHeight, {
     timeSec,
     phaseTimer,
     deathHazardPos: deathHazard ? deathHazard.pos : null,

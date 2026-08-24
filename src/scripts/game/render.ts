@@ -1,5 +1,5 @@
 import { computeCamera, worldToScreen, type Camera } from "./camera";
-import { MOTH_RADIUS, type GameState, type StageConfig, type Vec2 } from "./state";
+import { MOTH_RADIUS, type Attractor, type GameState, type StageConfig, type Vec2 } from "./state";
 
 export type RenderExtras = {
   timeSec: number;
@@ -7,12 +7,17 @@ export type RenderExtras = {
   deathHazardPos: Vec2 | null; // the hazard that caught the moth, while "lost"
 };
 
+// What render actually needs from a stage: everything StageConfig has,
+// except hazards already resolved to their current on-screen positions (see
+// hazards.ts) rather than the raw per-stage motion config.
+type RenderStage = Omit<StageConfig, "hazards"> & { hazards: Attractor[] };
+
 // Reads a GameState snapshot and draws it. Never mutates state — all
 // decisions live in moth.ts and outcome.ts.
 export function render(
   ctx: CanvasRenderingContext2D,
   state: GameState,
-  stage: StageConfig,
+  stage: RenderStage,
   viewWidth: number,
   viewHeight: number,
   extras: RenderExtras,
@@ -24,10 +29,11 @@ export function render(
 
   drawHazards(ctx, camera, stage, state.moth.pos, extras);
   drawFlower(ctx, camera, stage, extras.timeSec);
-  if (state.light && state.phase !== "lost") drawLight(ctx, camera, state.light, extras.timeSec);
+  if (state.light && state.phase === "playing") drawLight(ctx, camera, state.light, extras.timeSec);
   drawMoth(ctx, camera, state, extras.timeSec);
 
   if (state.phase === "lost") drawDeathOverlay(ctx, viewWidth, viewHeight, extras.phaseTimer);
+  else if (state.phase === "won") drawWinOverlay(ctx, viewWidth, viewHeight, extras.phaseTimer);
 }
 
 function glow(ctx: CanvasRenderingContext2D, center: Vec2, radius: number, color: string) {
@@ -46,7 +52,7 @@ function glow(ctx: CanvasRenderingContext2D, center: Vec2, radius: number, color
 function drawHazards(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
-  stage: StageConfig,
+  stage: RenderStage,
   mothPos: Vec2,
   extras: RenderExtras,
 ) {
@@ -132,14 +138,25 @@ function drawHazardBurst(
 
 // The safe target reads as an actual flower --- petals and a center, not a
 // dot --- so it can't be mistaken for a light source. Petals open wider and
-// warm up once reached.
-function drawFlower(ctx: CanvasRenderingContext2D, camera: Camera, stage: StageConfig, timeSec: number) {
+// warm up once reached. The final stage's flower (isGoal) swaps the usual
+// warm amber for a cool blue-white "moon" palette on top of its own larger
+// radius, so it reads as categorically different the moment it's on screen,
+// not just as one more bloom that advances a stage.
+function drawFlower(ctx: CanvasRenderingContext2D, camera: Camera, stage: RenderStage, timeSec: number) {
   const p = worldToScreen(camera, stage.flower.pos);
   const bloom = stage.flower.bloomed;
+  const isGoal = stage.flower.isGoal;
   const r = stage.flower.radius * camera.scale * (bloom ? 1.2 : 1);
 
   ctx.globalCompositeOperation = "lighter";
-  glow(ctx, p, r * 3.2, bloom ? "rgba(255,235,190,0.7)" : "rgba(255,205,140,0.42)");
+  const glowColor = isGoal
+    ? bloom
+      ? "rgba(225,238,255,0.8)"
+      : "rgba(200,220,255,0.55)"
+    : bloom
+      ? "rgba(255,235,190,0.7)"
+      : "rgba(255,205,140,0.42)";
+  glow(ctx, p, r * (isGoal ? 4.2 : 3.2), glowColor);
   ctx.globalCompositeOperation = "source-over";
 
   ctx.save();
@@ -147,7 +164,13 @@ function drawFlower(ctx: CanvasRenderingContext2D, camera: Camera, stage: StageC
   ctx.rotate(Math.sin(timeSec * 0.6) * 0.06);
 
   const petals = 6;
-  const petalColor = bloom ? "rgba(255,246,220,0.95)" : "rgba(255,214,150,0.85)";
+  const petalColor = isGoal
+    ? bloom
+      ? "rgba(240,246,255,0.95)"
+      : "rgba(210,225,255,0.85)"
+    : bloom
+      ? "rgba(255,246,220,0.95)"
+      : "rgba(255,214,150,0.85)";
   for (let i = 0; i < petals; i++) {
     ctx.save();
     ctx.rotate((i / petals) * Math.PI * 2);
@@ -158,7 +181,7 @@ function drawFlower(ctx: CanvasRenderingContext2D, camera: Camera, stage: StageC
     ctx.restore();
   }
 
-  ctx.fillStyle = bloom ? "#fff7e3" : "#ffe4a8";
+  ctx.fillStyle = isGoal ? (bloom ? "#ffffff" : "#eaf1ff") : bloom ? "#fff7e3" : "#ffe4a8";
   ctx.beginPath();
   ctx.arc(0, 0, r * 0.38, 0, Math.PI * 2);
   ctx.fill();
@@ -240,4 +263,20 @@ function drawDeathOverlay(
     ctx.fillStyle = `rgba(255,70,60,${flash * 0.55})`;
     ctx.fillRect(0, 0, viewWidth, viewHeight);
   }
+}
+
+// A slow, calm wash to the opposite mood of the death flash: reaching the
+// moon flower stops the player's own light from drawing (see render()) and
+// gently brightens the whole screen instead, so "the game is over" reads
+// distinctly from "you reached a flower and it's about to advance" even
+// though neither state uses any text.
+function drawWinOverlay(
+  ctx: CanvasRenderingContext2D,
+  viewWidth: number,
+  viewHeight: number,
+  phaseTimer: number,
+) {
+  const t = Math.min(1, phaseTimer / 1.8);
+  ctx.fillStyle = `rgba(225,238,255,${(0.16 * t).toFixed(3)})`;
+  ctx.fillRect(0, 0, viewWidth, viewHeight);
 }
