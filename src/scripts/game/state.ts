@@ -106,7 +106,9 @@ export const STAGES: StageConfig[] = [
         strength: 1,
         radius: 40,
         influenceRadius: 170,
-        motion: { amplitude: { x: 90, y: 60 }, angularSpeed: 0.35 },
+        // angularSpeed tuned up ~17% from the original 0.35 after playtest
+        // feedback that the drift read as too slow to demand attention.
+        motion: { amplitude: { x: 90, y: 60 }, angularSpeed: 0.41 },
       },
     ],
     followSpeed: 340,
@@ -119,20 +121,22 @@ export const STAGES: StageConfig[] = [
     // Two hazards flanking the direct line, drifting out of phase with each
     // other so their danger zones rarely close the middle at the same time --
     // a route always exists, it just isn't always the same route.
+    // angularSpeeds tuned up ~17-19% from the original 0.4/0.32 after
+    // playtest feedback that the drift read as too slow to demand attention.
     hazards: [
       {
         pos: { x: 430, y: 300 },
         strength: 1,
         radius: 38,
         influenceRadius: 150,
-        motion: { amplitude: { x: 60, y: 40 }, angularSpeed: 0.4 },
+        motion: { amplitude: { x: 60, y: 40 }, angularSpeed: 0.47 },
       },
       {
         pos: { x: 620, y: 650 },
         strength: 1,
         radius: 38,
         influenceRadius: 150,
-        motion: { amplitude: { x: 70, y: 50 }, angularSpeed: 0.32, phase: Math.PI },
+        motion: { amplitude: { x: 70, y: 50 }, angularSpeed: 0.38, phase: Math.PI },
       },
     ],
     followSpeed: 340,
@@ -155,27 +159,29 @@ export const STAGES: StageConfig[] = [
     // actually has to deal with them. Same followSpeed/maxTurnRate as every
     // earlier stage -- difficulty is "more to keep track of," never a
     // twitchier moth.
+    // angularSpeeds tuned up ~16-17% from the original 0.3/0.25/0.35 after
+    // playtest feedback that the drift read as too slow to demand attention.
     hazards: [
       {
         pos: { x: 190, y: 470 },
         strength: 1,
         radius: 40,
         influenceRadius: 150,
-        motion: { amplitude: { x: 70, y: 55 }, angularSpeed: 0.3 },
+        motion: { amplitude: { x: 70, y: 55 }, angularSpeed: 0.35 },
       },
       {
         pos: { x: 733, y: 593 },
         strength: 1,
         radius: 40,
         influenceRadius: 150,
-        motion: { amplitude: { x: 60, y: 45 }, angularSpeed: 0.25, phase: 2.1 },
+        motion: { amplitude: { x: 60, y: 45 }, angularSpeed: 0.29, phase: 2.1 },
       },
       {
         pos: { x: 500, y: 80 },
         strength: 1,
         radius: 40,
         influenceRadius: 160,
-        motion: { amplitude: { x: 90, y: 50 }, angularSpeed: 0.35, phase: 4.2 },
+        motion: { amplitude: { x: 90, y: 50 }, angularSpeed: 0.41, phase: 4.2 },
       },
     ],
     followSpeed: 340,

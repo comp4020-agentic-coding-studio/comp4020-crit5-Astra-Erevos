@@ -161,7 +161,11 @@ function drawFlower(ctx: CanvasRenderingContext2D, camera: Camera, stage: Render
 
   ctx.save();
   ctx.translate(p.x, p.y);
-  ctx.rotate(Math.sin(timeSec * 0.6) * 0.06);
+  // The moon flower's sway is tuned ~13% faster than every other flower's
+  // (0.6) after playtest feedback that the final stage's target read as too
+  // static -- its own idle animation is the only "movement" a
+  // fixed-position flower has, so that's the one knob to turn up here.
+  ctx.rotate(Math.sin(timeSec * (isGoal ? 0.68 : 0.6)) * 0.06);
 
   const petals = 6;
   const petalColor = isGoal
