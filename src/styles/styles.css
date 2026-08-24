@@ -66,6 +66,61 @@ a {
   line-height: 1;
 }
 
+/* Small persistent icon button, always present -- distinct from .retry's
+   result-state pattern, since muting is a standing preference the player
+   may want to reach for at any point in the night, not a reaction to an
+   outcome. */
+.mute {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  width: 2.4rem;
+  height: 2.4rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(225, 238, 255, 0.35);
+  background: rgba(8, 10, 18, 0.5);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.mute:hover,
+.mute:focus-visible {
+  background: rgba(225, 238, 255, 0.16);
+  border-color: rgba(225, 238, 255, 0.6);
+}
+
+/* The one line of text the ending is allowed -- a result state, not a
+   tutorial, so it stays hidden and inert until the final bloom reveals it,
+   sitting just above the repurposed "Play Again" control. */
+.ending {
+  position: fixed;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 1.2s ease;
+  text-align: center;
+}
+
+.ending.is-visible {
+  opacity: 1;
+}
+
+.ending-text {
+  margin: 0;
+  color: #eaf3ff;
+  font: 600 1.4rem/1.4 system-ui, sans-serif;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(200, 220, 255, 0.6);
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

@@ -1,22 +1,29 @@
-import type { Attractor, HazardConfig, Vec2 } from "./state";
-
-// A moving hazard traces a fixed ellipse around its configured anchor, purely
-// as a function of elapsed stage time -- no velocity or path-progress stored
-// anywhere. That determinism is what makes stage resets free: restarting
-// stage time at 0 already puts every hazard back at the same point in its
-// cycle, with nothing extra to reset by hand.
-function hazardPositionAt(hazard: HazardConfig, stageTime: number): Vec2 {
-  if (!hazard.motion) return hazard.pos;
-  const { amplitude, angularSpeed, phase = 0 } = hazard.motion;
-  const t = stageTime * angularSpeed + phase;
-  return { x: hazard.pos.x + amplitude.x * Math.cos(t), y: hazard.pos.y + amplitude.y * Math.sin(t) };
-}
+import { resolvePosition } from "./motion";
+import type { Attractor, HazardConfig } from "./state";
 
 export function resolveHazards(hazards: HazardConfig[], stageTime: number): Attractor[] {
   return hazards.map((hazard) => ({
-    pos: hazardPositionAt(hazard, stageTime),
+    pos: resolvePosition(hazard.pos, hazard.motion, stageTime),
     strength: hazard.strength,
     radius: hazard.radius,
     influenceRadius: hazard.influenceRadius,
+    kind: hazard.kind,
   }));
+}
+
+// How deep the moth is inside one hazard's influence radius: 0 (outside, or
+// no influence radius at all) to 1 (right on top of it). Shared by
+// render.ts (the shimmer/pulse standing in for a debug ring) and audio.ts
+// (the proximity pulse) so both read exactly the same number instead of
+// each re-deriving their own falloff.
+export function hazardProximity(mothPos: { x: number; y: number }, hazard: Attractor): number {
+  if (hazard.influenceRadius === undefined) return 0;
+  const dist = Math.hypot(mothPos.x - hazard.pos.x, mothPos.y - hazard.pos.y);
+  return Math.min(1, Math.max(0, (hazard.influenceRadius - dist) / hazard.influenceRadius));
+}
+
+export function maxHazardProximity(mothPos: { x: number; y: number }, hazards: Attractor[]): number {
+  let max = 0;
+  for (const hazard of hazards) max = Math.max(max, hazardProximity(mothPos, hazard));
+  return max;
 }

@@ -6,10 +6,10 @@ import "../styles/styles.css";
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Moth</title>
+    <title>MOTH — The Last Night</title>
     <meta
       name="description"
-      content="A moth drifts through the dark, drawn toward whatever glows."
+      content="Guide a moth through one last night with nothing but a light you carry."
     />
 
     <!--
@@ -29,15 +29,19 @@ import "../styles/styles.css";
       </nav>
     </header>
     <main>
-      <h1 class="visually-hidden">Moth</h1>
+      <h1 class="visually-hidden">MOTH — The Last Night</h1>
       <canvas
         id="scene"
-        aria-label="A moth drifting through the dark, following a light you control"
+        aria-label="A moth drifting through a dark garden at night, following a light you carry"
       ></canvas>
+      <button id="mute" class="mute" type="button" aria-label="Mute">🔊</button>
       <button id="retry" class="retry" type="button">
         <span class="retry-icon" aria-hidden="true">&#8635;</span>
-        <span>Retry</span>
+        <span class="retry-label">Retry</span>
       </button>
+      <div id="ending" class="ending" aria-live="polite">
+        <p class="ending-text">THE NIGHT REMEMBERS</p>
+      </div>
     </main>
     <script src="../scripts/main.ts"></script>
   </body>
