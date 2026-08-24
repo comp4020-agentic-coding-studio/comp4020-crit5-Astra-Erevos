@@ -4,7 +4,7 @@ import { checkOutcome } from "./game/outcome";
 import { render } from "./game/render";
 import {
   createInitialState,
-  LIGHT_STRENGTH,
+  FLOWER_VISUAL_OVERSHOOT,
   MOTH_RADIUS,
   STAGES,
   type Attractor,
@@ -96,13 +96,6 @@ function idleWobble(time: number) {
   };
 }
 
-function attractorsFor(current: GameState): Attractor[] {
-  const stage = STAGES[current.stageIndex];
-  const attractors: Attractor[] = [...stage.hazards];
-  if (current.light) attractors.push({ pos: current.light, strength: LIGHT_STRENGTH, radius: 0 });
-  return attractors;
-}
-
 // Which hazard actually caught the moth — same inclusion rule as
 // checkOutcome, just naming the culprit instead of only the verdict.
 function findCauseHazard(mothPos: Vec2, hazards: Attractor[]): Attractor | null {
@@ -149,8 +142,15 @@ function frame(time: number): void {
     introTime += dt * 1000;
     state.moth.pos = idleWobble(introTime);
   } else if (state.phase === "playing") {
-    state.moth = stepMoth(state.moth, attractorsFor(state), stage.followSpeed, stage.maxTurnRate, dt);
-    const outcome = checkOutcome(state.moth.pos, stage.hazards, stage.flower, MOTH_RADIUS);
+    state.moth = stepMoth(state.moth, state.light, stage.hazards, stage.followSpeed, stage.maxTurnRate, dt);
+    // The flower's petals (and the moth's own wings) visually reach well past
+    // their logical radii once drawn -- see drawFlower/drawMoth in render.ts
+    // -- so a player who visibly touches the flower should win, not just one
+    // whose moth-center is within its raw radius. Widen only the flower side
+    // of the check to close that gap; hazard danger geometry (MOTH_RADIUS +
+    // hazard.radius) is untouched.
+    const visualFlower = { ...stage.flower, radius: stage.flower.radius * FLOWER_VISUAL_OVERSHOOT };
+    const outcome = checkOutcome(state.moth.pos, stage.hazards, visualFlower, MOTH_RADIUS);
     if (outcome === "lost") {
       deathMothPos = { ...state.moth.pos };
       deathHazard = findCauseHazard(state.moth.pos, stage.hazards);

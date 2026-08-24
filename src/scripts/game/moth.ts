@@ -1,7 +1,18 @@
-import type { Attractor, MothState, Vec2 } from "./state";
+import { LIGHT_STRENGTH, type Attractor, type MothState, type Vec2 } from "./state";
 
 const MIN_DISTANCE = 24; // clamps the pull of anything the moth is right on top of
 const SPEED_EASE = 4; // higher = quicker to reach target speed
+
+// How many seconds of full-speed travel the moth reserves for slowing into
+// the player's light. Beyond this distance (arrivalRadius = followSpeed *
+// ARRIVAL_TIME) it flies at followSpeed as before; inside it, target speed
+// ramps linearly down to a stop. Without this, the moth kept a fixed
+// followSpeed right up to the light, and its turn-rate-clamped heading gives
+// it a fixed minimum turning radius at that speed -- too wide to converge on
+// a point target, so it endlessly orbited instead of arriving. Slowing on
+// approach shrinks that turning radius right along with it, letting the moth
+// curl in and settle instead of circling.
+const ARRIVAL_TIME = 0.4;
 
 function subtract(a: Vec2, b: Vec2): Vec2 {
   return { x: a.x - b.x, y: a.y - b.y };
@@ -63,13 +74,33 @@ function angleDelta(a: number, b: number): number {
   return delta;
 }
 
+// Hard speed cap for this frame, full followSpeed while the light is still
+// far off, falling linearly to a stop as the moth enters arrivalRadius.
+// Driven only by distance to the player's light -- hazards stay a pure
+// direction bias (see attractionWeight/desiredDirection) and never affect
+// this, so a nearby hazard can steer the moth off course but can never stop
+// it from slowing into and settling at the light. This has to be an
+// immediate cap, not another eased target: easing it the same way as normal
+// acceleration left actual speed lagging a few frames behind the shrinking
+// target, so the moth was still moving fast by the time it was already
+// close -- recreating the same orbit arrival was meant to fix.
+function arrivalSpeedCap(distanceToLight: number, followSpeed: number): number {
+  const arrivalRadius = followSpeed * ARRIVAL_TIME;
+  if (distanceToLight >= arrivalRadius) return followSpeed;
+  return followSpeed * (distanceToLight / arrivalRadius);
+}
+
 export function stepMoth(
   moth: MothState,
-  attractors: Attractor[],
+  lightPos: Vec2 | null,
+  hazards: Attractor[],
   followSpeed: number,
   maxTurnRate: number,
   dt: number,
 ): MothState {
+  const attractors: Attractor[] = lightPos
+    ? [...hazards, { pos: lightPos, strength: LIGHT_STRENGTH, radius: 0 }]
+    : hazards;
   const desired = desiredDirection(moth.pos, attractors);
   const currentAngle = headingAngle(moth.heading);
   const targetAngle = desired ? headingAngle(desired) : currentAngle;
@@ -79,7 +110,11 @@ export function stepMoth(
   const heading = angleToVec(currentAngle + clampedDelta);
 
   const targetSpeed = desired ? followSpeed : 0;
-  const speed = moth.speed + (targetSpeed - moth.speed) * Math.min(1, dt * SPEED_EASE);
+  let speed = moth.speed + (targetSpeed - moth.speed) * Math.min(1, dt * SPEED_EASE);
+  if (desired && lightPos) {
+    const distanceToLight = length(subtract(lightPos, moth.pos));
+    speed = Math.min(speed, arrivalSpeedCap(distanceToLight, followSpeed));
+  }
 
   const pos = {
     x: moth.pos.x + heading.x * speed * dt,

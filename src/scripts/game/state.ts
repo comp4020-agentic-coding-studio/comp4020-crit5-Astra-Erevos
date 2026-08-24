@@ -44,6 +44,16 @@ export const WORLD = { width: 1000, height: 1000 };
 export const MOTH_RADIUS = 16;
 export const LIGHT_STRENGTH = 1;
 
+// render.ts draws a flower's petals reaching roughly 1.22x its logical
+// radius, and the moth's wings reaching roughly 1.75x MOTH_RADIUS -- so the
+// two visually touch at about 1.22*radius + 1.75*MOTH_RADIUS, well past the
+// raw radius + MOTH_RADIUS that checkOutcome used to test. This widens only
+// the flower side of that gap (applied at the checkOutcome call site in
+// main.ts) so a player who visibly reaches the flower wins, without touching
+// MOTH_RADIUS itself -- which also sets hazard danger geometry and must stay
+// exactly as tuned there.
+export const FLOWER_VISUAL_OVERSHOOT = 1.5;
+
 export const STAGES: StageConfig[] = [
   {
     name: "First Light",
