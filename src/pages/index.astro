@@ -6,10 +6,10 @@ import "../styles/styles.css";
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>COMP4020 prototype</title>
+    <title>Moth</title>
     <meta
       name="description"
-      content="Replace this with one sentence saying what this page is. A search result and a link preview both show it."
+      content="A moth drifts through the dark, drawn toward whatever glows."
     />
 
     <!--
@@ -23,17 +23,17 @@ import "../styles/styles.css";
 
   </head>
   <body>
-    <header>
+    <header class="visually-hidden">
       <nav aria-label="Primary">
         <a href="./">Home</a>
       </nav>
     </header>
     <main>
-      <h1>COMP4020 prototype</h1>
-      <p>
-        Replace this with your prototype. This week's brief is on the course website;
-        <code>spec/README.md</code> explains how the checks in this repo relate to it.
-      </p>
+      <h1 class="visually-hidden">Moth</h1>
+      <canvas
+        id="scene"
+        aria-label="A moth drifting through the dark, following a light you control"
+      ></canvas>
     </main>
     <script src="../scripts/main.ts"></script>
   </body>
