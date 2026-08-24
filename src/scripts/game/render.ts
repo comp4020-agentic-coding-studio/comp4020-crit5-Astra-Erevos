@@ -22,7 +22,7 @@ export function render(
   ctx.fillStyle = "#050507";
   ctx.fillRect(0, 0, viewWidth, viewHeight);
 
-  drawHazards(ctx, camera, stage, extras);
+  drawHazards(ctx, camera, stage, state.moth.pos, extras);
   drawFlower(ctx, camera, stage, extras.timeSec);
   if (state.light && state.phase !== "lost") drawLight(ctx, camera, state.light, extras.timeSec);
   drawMoth(ctx, camera, state, extras.timeSec);
@@ -47,6 +47,7 @@ function drawHazards(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
   stage: StageConfig,
+  mothPos: Vec2,
   extras: RenderExtras,
 ) {
   ctx.globalCompositeOperation = "lighter";
@@ -57,10 +58,42 @@ function drawHazards(
       hazard.pos.y === extras.deathHazardPos.y;
     // A brief surge on the specific hazard that just caught the moth, on top
     // of its constant low-level "danger" pulse.
-    const surge = isCause ? 1 + Math.max(0, 1 - extras.phaseTimer / 0.4) * 0.9 : 1;
-    drawHazardBurst(ctx, camera, hazard.pos, hazard.radius, extras.timeSec, surge);
+    const deathSurge = isCause ? 1 + Math.max(0, 1 - extras.phaseTimer / 0.4) * 0.9 : 1;
+
+    // A gentler, standing surge while the moth sits inside the hazard's
+    // actual pull range --- so the moment attraction.ts starts tugging on
+    // the moth is the same moment the hazard visibly reacts to it.
+    let proximityT = 0;
+    if (hazard.influenceRadius !== undefined) {
+      const dist = Math.hypot(mothPos.x - hazard.pos.x, mothPos.y - hazard.pos.y);
+      proximityT = Math.min(1, Math.max(0, (hazard.influenceRadius - dist) / hazard.influenceRadius));
+      drawInfluenceRing(ctx, camera, hazard.pos, hazard.influenceRadius, proximityT);
+    }
+    const proximitySurge = 1 + proximityT * 0.6;
+
+    drawHazardBurst(ctx, camera, hazard.pos, hazard.radius, extras.timeSec, deathSurge * proximitySurge);
   }
   ctx.globalCompositeOperation = "source-over";
+}
+
+// A very faint ring at the edge of the hazard's actual pull range --- almost
+// invisible at rest, so it never reads as a second hard boundary, but warms
+// slightly once the moth is inside it as one more cue that something is
+// happening.
+function drawInfluenceRing(
+  ctx: CanvasRenderingContext2D,
+  camera: Camera,
+  worldPos: Vec2,
+  worldRadius: number,
+  proximityT: number,
+) {
+  const p = worldToScreen(camera, worldPos);
+  const r = worldRadius * camera.scale;
+  ctx.strokeStyle = `rgba(255,90,70,${(0.05 + proximityT * 0.12).toFixed(3)})`;
+  ctx.lineWidth = Math.max(1, 1.5 * camera.scale);
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
+  ctx.stroke();
 }
 
 function drawHazardBurst(

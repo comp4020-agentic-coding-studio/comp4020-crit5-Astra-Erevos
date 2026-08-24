@@ -27,6 +27,45 @@ a {
   color: #7ab8ff;
 }
 
+/* Result-state control, not a tutorial: hidden and inert until a loss
+   reveals it, so the opening screen still shows nothing but the scene. */
+.retry {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.65rem 1.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(225, 238, 255, 0.55);
+  background: rgba(8, 10, 18, 0.6);
+  color: #e7f0ff;
+  font: 600 1.05rem/1 system-ui, sans-serif;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease;
+}
+
+.retry.is-visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.retry:hover,
+.retry:focus-visible {
+  background: rgba(225, 238, 255, 0.18);
+  border-color: #e7f0ff;
+}
+
+.retry-icon {
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

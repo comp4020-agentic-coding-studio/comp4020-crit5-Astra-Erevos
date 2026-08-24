@@ -12,10 +12,10 @@ import {
   type Vec2,
 } from "./game/state";
 
-// How long a failed attempt holds on screen (death flash + the moth visibly
-// pulled into the hazard) before the stage resets on its own. No button to
-// find or learn — losing always resolves itself the same way.
-const RESTART_DELAY = 1.4;
+// How long the death animation (flash + the moth visibly pulled into the
+// hazard) plays before the Retry control appears. After that the game is
+// genuinely paused — nothing moves again until the player asks it to.
+const RETRY_REVEAL_DELAY = 0.6;
 
 function getCanvas(): HTMLCanvasElement {
   const el = document.querySelector<HTMLCanvasElement>("#scene");
@@ -29,8 +29,15 @@ function getContext(el: HTMLCanvasElement): CanvasRenderingContext2D {
   return context;
 }
 
+function getRetryButton(): HTMLButtonElement {
+  const el = document.querySelector<HTMLButtonElement>("#retry");
+  if (!el) throw new Error("missing #retry button");
+  return el;
+}
+
 const canvas = getCanvas();
 const ctx = getContext(canvas);
+const retryButton = getRetryButton();
 
 const state: GameState = createInitialState();
 let camera: Camera = computeCamera(window.innerWidth, window.innerHeight);
@@ -62,9 +69,22 @@ function onPointerActivity(event: PointerEvent): void {
   if (state.phase === "intro") state.phase = "playing";
 }
 
+function showRetry(): void {
+  retryButton.classList.add("is-visible");
+}
+
+function hideRetry(): void {
+  retryButton.classList.remove("is-visible");
+}
+
 window.addEventListener("resize", resize);
 window.addEventListener("pointermove", onPointerActivity);
 window.addEventListener("pointerdown", onPointerActivity);
+retryButton.addEventListener("click", () => {
+  if (state.phase !== "lost") return;
+  resetStage();
+  hideRetry();
+});
 resize();
 
 function idleWobble(time: number) {
@@ -93,9 +113,13 @@ function findCauseHazard(mothPos: Vec2, hazards: Attractor[]): Attractor | null 
   return null;
 }
 
+// Re-initializes every piece of dynamic state for the current stage — moth,
+// player light, and the death bookkeeping — so a retry never inherits
+// anything from the attempt that just failed.
 function resetStage(): void {
   const stage = STAGES[state.stageIndex];
   state.moth = { pos: { ...stage.mothStart }, heading: { x: 1, y: 0 }, speed: 0 };
+  state.light = null;
   state.phase = "playing";
   deathHazard = null;
   deathMothPos = null;
@@ -141,7 +165,9 @@ function frame(time: number): void {
     }
   } else if (state.phase === "lost") {
     // Sell the cause: visibly drag the moth the rest of the way into the
-    // hazard that caught it, instead of freezing it mid-air.
+    // hazard that caught it, instead of freezing it mid-air. Once that
+    // settles, the game stays paused here — nothing runs again until Retry
+    // is clicked.
     if (deathHazard && deathMothPos) {
       const pullT = Math.min(1, phaseTimer / 0.3);
       state.moth.pos = {
@@ -149,7 +175,7 @@ function frame(time: number): void {
         y: deathMothPos.y + (deathHazard.pos.y - deathMothPos.y) * pullT,
       };
     }
-    if (phaseTimer >= RESTART_DELAY) resetStage();
+    if (phaseTimer >= RETRY_REVEAL_DELAY) showRetry();
   }
 
   render(ctx, state, STAGES[state.stageIndex], window.innerWidth, window.innerHeight, {

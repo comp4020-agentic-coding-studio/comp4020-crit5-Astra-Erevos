@@ -2,8 +2,13 @@ export type Vec2 = { x: number; y: number };
 export type Phase = "intro" | "playing" | "won" | "lost";
 
 // The light and every hazard pull the moth by the same rule (see moth.ts) —
-// only their position and strength differ, and the moth can't tell them apart.
-export type Attractor = { pos: Vec2; strength: number; radius: number };
+// only their position and strength differ, and the moth can't tell them
+// apart. `influenceRadius`, when set, confines the pull to a local zone
+// around the attractor (ramping up from a faint tug at its edge to full
+// strength at `radius`) instead of reaching across the whole stage — used by
+// hazards so the player's light stays the dominant, always-on pull and a
+// hazard only competes with it once the moth is already close.
+export type Attractor = { pos: Vec2; strength: number; radius: number; influenceRadius?: number };
 
 export type Flower = {
   pos: Vec2;
@@ -52,7 +57,12 @@ export const STAGES: StageConfig[] = [
     name: "Cold Glimmer",
     mothStart: { x: 160, y: 560 },
     flower: { pos: { x: 860, y: 460 }, radius: 42, isGoal: true, bloomed: false },
-    hazards: [{ pos: { x: 520, y: 380 }, strength: 1, radius: 40 }],
+    // Sits well clear of the direct start-to-flower line (~210 units) and
+    // only pulls within influenceRadius, so flying straight for the flower
+    // never brushes it — reaching it at all is a deliberate detour, and a
+    // player who notices the tug and steers back out within roughly its
+    // radius can still recover the moth.
+    hazards: [{ pos: { x: 500, y: 300 }, strength: 1, radius: 40, influenceRadius: 170 }],
     followSpeed: 340,
     maxTurnRate: 2.6,
   },

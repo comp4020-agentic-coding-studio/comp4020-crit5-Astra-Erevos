@@ -16,16 +16,31 @@ function normalize(v: Vec2): Vec2 {
   return len < 1e-6 ? { x: 0, y: 0 } : { x: v.x / len, y: v.y / len };
 }
 
+// Attractors without an influence radius (the player's light) pull from any
+// distance, same as always. Attractors with one (hazards) contribute nothing
+// beyond it, and ramp in with a squared falloff — a faint tug just inside the
+// edge, rising to full pull only near `radius` itself — so a hazard can only
+// ever compete with the light once the moth is already close, never across
+// the open stage.
+function attractionWeight(attractor: Attractor, distance: number): number {
+  if (attractor.influenceRadius === undefined) return attractor.strength / distance;
+  if (distance >= attractor.influenceRadius) return 0;
+  const span = Math.max(attractor.influenceRadius - attractor.radius, 1);
+  const t = Math.min(1, Math.max(0, (attractor.influenceRadius - distance) / span));
+  return (attractor.strength * t * t) / distance;
+}
+
 // The moth is pulled toward every attractor at once, each weighted by
-// strength over distance — whichever is closest relative to its strength
+// attractionWeight — whichever pulls hardest at the moth's current position
 // wins the direction. The player's light and every hazard use this same
-// rule; nothing distinguishes them except position and strength.
+// rule; nothing distinguishes them except position, strength, and range.
 function desiredDirection(mothPos: Vec2, attractors: Attractor[]): Vec2 | null {
   let sum: Vec2 = { x: 0, y: 0 };
   for (const attractor of attractors) {
     const toAttractor = subtract(attractor.pos, mothPos);
     const distance = Math.max(length(toAttractor), MIN_DISTANCE);
-    const weight = attractor.strength / distance;
+    const weight = attractionWeight(attractor, distance);
+    if (weight <= 0) continue;
     const direction = normalize(toAttractor);
     sum = { x: sum.x + direction.x * weight, y: sum.y + direction.y * weight };
   }
