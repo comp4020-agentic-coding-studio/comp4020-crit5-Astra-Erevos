@@ -5,12 +5,13 @@ import { maxHazardProximity, resolveHazards } from "./game/hazards";
 import { stepMoth } from "./game/moth";
 import { resolvePosition } from "./game/motion";
 import { checkOutcome } from "./game/outcome";
-import { render } from "./game/render";
+import { render, renderPrologue } from "./game/render";
 import {
   createInitialState,
   FLOWER_VISUAL_OVERSHOOT,
   MOTH_RADIUS,
   STAGES,
+  STAGE_TITLES,
   type Attractor,
   type GameState,
   type Vec2,
@@ -28,9 +29,24 @@ const TRAIL_LENGTH = 22;
 
 // When the final stage's ending text/replay control appears, in seconds into
 // the "won" phase -- the earlier beats (bloom easing open, environment wash,
-// light motes, the moth's moonlit variant) are timed directly off
-// extras.phaseTimer inside render.ts.
-const ENDING_TEXT_AT = 6;
+// light motes, the moth's moonlit variant, and the memory montage of the
+// four earlier stages) are timed directly off extras.phaseTimer inside
+// render.ts. Bumped past the montage's own ~4.4-7.0s window so the text
+// never overlaps it.
+const ENDING_TEXT_AT = 7.2;
+
+// How long the Memory Echo window stays open once a fragment is collected --
+// matches the fade-in/hold/fade-out envelope drawMemoryEcho shapes off echoT.
+const MEMORY_ECHO_DURATION = 0.9;
+
+// How long the fixed cosmetic pause between two stages holds once a non-final
+// stage's flower blooms, before advanceStage() actually fires — long enough
+// for the stage's transitionOut effect (see render.ts's drawTransitionEffect)
+// to read as a real cause happening on screen, not a flicker.
+const TRANSITION_DURATION = 2.6;
+
+// How long the #stageTitle caption stays visible once shown, in seconds.
+const STAGE_TITLE_HOLD = 2.2;
 
 function getCanvas(): HTMLCanvasElement {
   const el = document.querySelector<HTMLCanvasElement>("#scene");
@@ -56,6 +72,18 @@ function getEndingOverlay(): HTMLElement {
   return el;
 }
 
+function getStageTitleOverlay(): HTMLElement {
+  const el = document.querySelector<HTMLElement>("#stageTitle");
+  if (!el) throw new Error("missing #stageTitle overlay");
+  return el;
+}
+
+function getPrologueTitleOverlay(): HTMLElement {
+  const el = document.querySelector<HTMLElement>("#prologueTitle");
+  if (!el) throw new Error("missing #prologueTitle overlay");
+  return el;
+}
+
 function getMuteButton(): HTMLButtonElement {
   const el = document.querySelector<HTMLButtonElement>("#mute");
   if (!el) throw new Error("missing #mute button");
@@ -66,8 +94,17 @@ const canvas = getCanvas();
 const ctx = getContext(canvas);
 const retryButton = getRetryButton();
 const endingOverlay = getEndingOverlay();
+const stageTitleOverlay = getStageTitleOverlay();
+const prologueTitleOverlay = getPrologueTitleOverlay();
 const muteButton = getMuteButton();
 const audio = createAudio();
+
+// The fixed ~6.5s visual beat shown before any real gameplay -- see
+// renderPrologue in render.ts. The real game loop (state, stageTime, audio)
+// stays completely untouched until this is done; prologueTime is its own
+// clock, independent of stageTime/introTime below.
+let prologueDone = false;
+let prologueTime = 0;
 
 const state: GameState = createInitialState();
 let camera: Camera = computeCamera(window.innerWidth, window.innerHeight);
@@ -96,6 +133,32 @@ let trail: Vec2[] = [];
 // reveal and the Retry-button relabel each only fire once per playthrough.
 let endingRevealed = false;
 
+// Non-null only during the fixed cosmetic pause between a non-final stage's
+// flower blooming and advanceStage() actually firing -- module-level, not
+// GameState, the same treatment already given to deathHazard/trail/
+// endingRevealed above. state.phase stays "playing" throughout; this is
+// presentation timing, not a new phase.
+let transition: { from: number; to: number; timer: number; effect: "ignite" | "flood" | "drain" | "reveal" } | null =
+  null;
+
+// Captured once, the instant `transition` is created -- the moth's frozen
+// bloom-instant position, same treatment as deathMothPos above. Only read
+// during a "flood" transition, to nudge the moth cosmetically toward higher
+// ground as the water rises; advanceStage()'s own next.mothStart assignment
+// is what actually resets its position for real.
+let transitionMothPos: Vec2 | null = null;
+
+// Non-null while a Memory Echo window is open (see drawMemoryEcho in
+// render.ts) -- 0..MEMORY_ECHO_DURATION seconds since the fragment that
+// triggered it was collected, reset to null once the window closes.
+let echoElapsed: number | null = null;
+
+// Which STAGES index the #stageTitle caption has already been shown for, so
+// intro/transition entry each only trigger it once; -1 means "never shown
+// yet". titleTimer drives its ~STAGE_TITLE_HOLD-second visible hold.
+let titleShownForStage = -1;
+let titleTimer = 0;
+
 function resize(): void {
   const dpr = window.devicePixelRatio || 1;
   canvas.width = window.innerWidth * dpr;
@@ -106,9 +169,26 @@ function resize(): void {
   camera = computeCamera(window.innerWidth, window.innerHeight);
 }
 
+// The prologue's own final beat -- a small held orb, see PROLOGUE_HOLD_AT in
+// render.ts -- is the one deliberate, unambiguous click every playthrough
+// passes through before any real input is possible. Routing the very first
+// `audio.ensureStarted()` call through it (rather than through this same
+// handler's normal pointermove/pointerdown, which browsers trust less as a
+// "real user gesture") is what actually fixes sound being silent until the
+// first death/Retry.
+const PROLOGUE_ORB_AT = 5.6;
+
 function onPointerActivity(event: PointerEvent): void {
+  if (!prologueDone) {
+    if (prologueTime >= PROLOGUE_ORB_AT) {
+      prologueDone = true;
+      prologueTitleOverlay.classList.remove("is-visible");
+      audio.ensureStarted();
+    }
+    return;
+  }
   audio.ensureStarted();
-  if (state.phase === "won" || state.phase === "lost") return;
+  if (state.phase === "won" || state.phase === "lost" || transition !== null) return;
   const rect = canvas.getBoundingClientRect();
   state.light = screenToWorld(camera, { x: event.clientX - rect.left, y: event.clientY - rect.top });
   if (state.phase === "intro") state.phase = "playing";
@@ -162,6 +242,22 @@ function findCauseHazard(mothPos: Vec2, hazards: Attractor[]): Attractor | null 
   return null;
 }
 
+// The closest hazard's `kind`, purely for audio.ts's timbre choice (a wisp
+// reads as more adrift/unstable than a still-caged lantern) -- never read
+// for gameplay, same as HazardKind itself.
+function nearestHazardKind(mothPos: Vec2, hazards: Attractor[]): "lantern" | "wisp" | undefined {
+  let closest: Attractor | null = null;
+  let closestDist = Infinity;
+  for (const hazard of hazards) {
+    const dist = Math.hypot(mothPos.x - hazard.pos.x, mothPos.y - hazard.pos.y);
+    if (dist < closestDist) {
+      closestDist = dist;
+      closest = hazard;
+    }
+  }
+  return closest?.kind;
+}
+
 // Re-initializes every piece of dynamic state for the current stage — moth,
 // player light, fragment progress, trail, and the death bookkeeping — so a
 // retry never inherits anything from the attempt that just failed.
@@ -175,6 +271,7 @@ function resetStage(): void {
   deathMothPos = null;
   stageTime = 0;
   trail = [];
+  echoElapsed = null;
 }
 
 function advanceStage(): void {
@@ -204,11 +301,37 @@ function restartGame(): void {
   trail = [];
   endingRevealed = false;
   endingOverlay.classList.remove("is-visible");
+  transition = null;
+  transitionMothPos = null;
+  echoElapsed = null;
+  titleShownForStage = -1;
+  titleTimer = 0;
+  stageTitleOverlay.classList.remove("is-visible");
+}
+
+// Shows the short (1-4 word), non-tutorial caption for the given stage --
+// STAGE_TITLES names a place or a consequence ("THE FLOOD"), never a control
+// or a rule, so this stays inside what C5 allows even though it's the one
+// piece of on-screen text in the whole game.
+function showStageTitle(stageIndex: number): void {
+  stageTitleOverlay.querySelector("p")!.textContent = STAGE_TITLES[stageIndex] ?? "";
+  stageTitleOverlay.classList.add("is-visible");
+  titleShownForStage = stageIndex;
+  titleTimer = 0;
 }
 
 function frame(time: number): void {
   const dt = lastTime ? Math.min((time - lastTime) / 1000, 1 / 20) : 0;
   lastTime = time;
+
+  if (!prologueDone) {
+    prologueTime += dt;
+    if (prologueTime >= PROLOGUE_ORB_AT) prologueTitleOverlay.classList.add("is-visible");
+    renderPrologue(ctx, window.innerWidth, window.innerHeight, prologueTime);
+    requestAnimationFrame(frame);
+    return;
+  }
+
   const timeSec = time / 1000;
 
   if (state.phase !== previousPhase) {
@@ -230,6 +353,34 @@ function frame(time: number): void {
   if (state.phase === "intro") {
     introTime += dt * 1000;
     state.moth.pos = idleWobble(introTime);
+    if (titleShownForStage !== state.stageIndex) showStageTitle(state.stageIndex);
+  } else if (state.phase === "playing" && transition) {
+    // The fixed cosmetic pause between two stages: the world stays exactly
+    // as it was the instant the flower bloomed (moth/hazards/flower frozen,
+    // since stageTime doesn't advance below) while render.ts's
+    // drawTransitionEffect plays the actual cause-and-effect on screen --
+    // e.g. the pump bursting and the marsh flooding in -- before the next
+    // stage appears underfoot.
+    transition.timer += dt;
+    // Timed to the midpoint so the caption appears once the flood/ignite/etc.
+    // effect is already visibly under way, not before the cause has landed.
+    if (titleShownForStage !== transition.to && transition.timer >= TRANSITION_DURATION / 2) {
+      showStageTitle(transition.to);
+    }
+    // The Marsh flooding in: nudge the moth cosmetically toward higher
+    // ground as the water rises, easing back to its frozen bloom-instant
+    // position at either end -- purely cosmetic, never touches stageTime or
+    // outcome logic, and advanceStage() below resets it for real regardless.
+    if (transition.effect === "flood" && transitionMothPos) {
+      const riseT = Math.min(1, transition.timer / TRANSITION_DURATION);
+      const riseAmount = Math.sin(Math.PI * riseT) * 40;
+      state.moth.pos = { x: transitionMothPos.x, y: transitionMothPos.y - riseAmount };
+    }
+    if (transition.timer >= TRANSITION_DURATION) {
+      advanceStage();
+      transition = null;
+      transitionMothPos = null;
+    }
   } else if (state.phase === "playing") {
     stageTime += dt;
     hazards = resolveHazards(stage.hazards, stageTime);
@@ -238,7 +389,13 @@ function frame(time: number): void {
 
     const newlyCollected = collectFragments(state.moth.pos, stage.fragments, state.fragmentsCollected, MOTH_RADIUS);
     for (let i = 0; i < newlyCollected.length; i++) {
-      if (newlyCollected[i] && !state.fragmentsCollected[i]) audio.onFragmentCollected();
+      if (newlyCollected[i] && !state.fragmentsCollected[i]) {
+        audio.onFragmentCollected();
+        // Every fragment-bearing stage gets a brief Memory Echo -- see
+        // drawMemoryEcho in render.ts -- showing this place whole again.
+        echoElapsed = 0;
+        audio.onMemoryEcho();
+      }
     }
     state.fragmentsCollected = newlyCollected;
 
@@ -267,7 +424,12 @@ function frame(time: number): void {
       if (stage.flower.isGoal) {
         state.phase = "won";
         audio.onFinalBloom();
+      } else if (stage.transitionOut) {
+        transition = { from: state.stageIndex, to: state.stageIndex + 1, timer: 0, effect: stage.transitionOut };
+        transitionMothPos = { ...state.moth.pos };
       } else {
+        // Defensive fallback only -- every non-final stage in STAGES names a
+        // transitionOut, so this should never actually run.
         advanceStage();
       }
     }
@@ -295,22 +457,37 @@ function frame(time: number): void {
     mothSpeedT: state.moth.speed / stage.followSpeed,
     timeSec,
     maxProximity: maxHazardProximity(state.moth.pos, hazards),
+    nearestHazardKind: nearestHazardKind(state.moth.pos, hazards),
   });
 
   trail.push({ ...state.moth.pos });
   if (trail.length > TRAIL_LENGTH) trail.shift();
+
+  if (titleShownForStage >= 0 && stageTitleOverlay.classList.contains("is-visible")) {
+    titleTimer += dt;
+    if (titleTimer >= STAGE_TITLE_HOLD) stageTitleOverlay.classList.remove("is-visible");
+  }
+
+  if (echoElapsed !== null) {
+    echoElapsed += dt;
+    if (echoElapsed >= MEMORY_ECHO_DURATION) echoElapsed = null;
+  }
 
   const renderStage = {
     ...stage,
     hazards,
     flower: { ...stage.flower, pos: flowerPos },
   };
+  const awakenT = stage.fragments.length === 0 ? 0 : state.fragmentsCollected.filter(Boolean).length / stage.fragments.length;
   render(ctx, state, renderStage, window.innerWidth, window.innerHeight, {
     timeSec,
     phaseTimer,
     deathHazardPos: deathHazard ? deathHazard.pos : null,
     fragmentsCollected: state.fragmentsCollected,
     trail,
+    awakenT,
+    transition: transition ? { t: Math.min(1, transition.timer / TRANSITION_DURATION), effect: transition.effect } : undefined,
+    echoT: echoElapsed === null ? null : Math.min(1, echoElapsed / MEMORY_ECHO_DURATION),
   });
   requestAnimationFrame(frame);
 }

@@ -8,12 +8,16 @@ export type AudioUpdateParams = {
   mothSpeedT: number; // moth speed normalized to roughly 0..1
   timeSec: number;
   maxProximity: number; // 0..1, see hazards.ts's maxHazardProximity
+  // Which kind of hazard is currently closest — purely a timbre choice (see
+  // update()'s wisp wobble below), never read for gameplay.
+  nearestHazardKind?: "lantern" | "wisp";
 };
 
 export type AudioController = {
   ensureStarted: () => void;
   update: (params: AudioUpdateParams) => void;
   onFragmentCollected: () => void;
+  onMemoryEcho: () => void;
   onBloom: () => void;
   onFinalBloom: () => void;
   toggleMute: () => boolean;
@@ -32,13 +36,21 @@ export function createAudio(): AudioController {
   let lastFlutterBeat = -1;
 
   function ensureStarted(): void {
-    if (ctx) return;
+    if (ctx) {
+      // A context can come back suspended after e.g. a tab backgrounding —
+      // any later gesture that calls this should still be able to revive it,
+      // not just the very first one.
+      if (ctx.state === "suspended") void ctx.resume();
+      return;
+    }
     ctx = new AudioContext();
     master = ctx.createGain();
     master.gain.value = muted ? 0 : restingVolume;
     master.connect(ctx.destination);
 
     // Player light: a faint continuous hum, silent until a light exists.
+    // This is the game's "real moonlight" timbre: clean sine, no detune —
+    // every trapped/unstable tone below is defined relative to it.
     const humOsc = ctx.createOscillator();
     humOsc.type = "sine";
     humOsc.frequency.value = 220;
@@ -49,9 +61,12 @@ export function createAudio(): AudioController {
 
     // Hazard proximity: a low, filtered, slightly harsh oscillator that
     // only becomes audible — and rises in pitch — as the moth gets close.
+    // Its sawtooth timbre is deliberately "the same light, gone unstable":
+    // related in register to the clean hum above, but detuned and beating.
     hazardOsc = ctx.createOscillator();
     hazardOsc.type = "sawtooth";
     hazardOsc.frequency.value = 55;
+    hazardOsc.detune.value = 0;
     const hazardFilter = ctx.createBiquadFilter();
     hazardFilter.type = "lowpass";
     hazardFilter.frequency.value = 220;
@@ -59,6 +74,8 @@ export function createAudio(): AudioController {
     hazardGain.gain.value = 0;
     hazardOsc.connect(hazardFilter).connect(hazardGain).connect(master);
     hazardOsc.start();
+
+    if (ctx.state === "suspended") void ctx.resume();
   }
 
   function update(params: AudioUpdateParams): void {
@@ -67,6 +84,12 @@ export function createAudio(): AudioController {
     humGain.gain.setTargetAtTime(params.lightActive ? 0.045 : 0, now, 0.3);
     hazardGain.gain.setTargetAtTime(params.maxProximity * 0.09, now, 0.15);
     hazardOsc.frequency.setTargetAtTime(50 + params.maxProximity * 45, now, 0.2);
+    // A wisp is trapped light that has already drifted loose from its
+    // lantern — same family as the lantern drone, but with an added slow
+    // pitch wobble so it reads as more adrift/unstable than a still-caged
+    // lantern's steadier (if still detuned) tone.
+    const wobble = params.nearestHazardKind === "wisp" ? Math.sin(params.timeSec * 3.1) * 18 : 0;
+    hazardOsc.detune.setTargetAtTime(wobble, now, 0.05);
 
     // Moth flutter: a soft tick retriggered once per wingbeat, only while
     // the moth is actually moving — reuses the exact flap phase render.ts
@@ -110,9 +133,17 @@ export function createAudio(): AudioController {
     }
   }
 
-  // Fragment collected: a short bright chime — two notes, quick decay.
+  // Fragment collected: a short bright chime — two notes, quick decay. Pure
+  // moonlight timbre, same family as the ending's full chord.
   function onFragmentCollected(): void {
     playChime([880, 1320], 0.5, 0.7);
+  }
+
+  // Memory Echo: the fragment chime, extended and filled out with the notes
+  // either side of it — a brief glimpse of the full harmonic layer that
+  // exists once the flower blooms, immediately folding back down.
+  function onMemoryEcho(): void {
+    playChime([660, 880, 1100, 1320], 0.85, 0.85);
   }
 
   // Flower bloom: a soft harmonic chime — three-note chord, gentle decay.
@@ -136,5 +167,5 @@ export function createAudio(): AudioController {
     return muted;
   }
 
-  return { ensureStarted, update, onFragmentCollected, onBloom, onFinalBloom, toggleMute, isMuted };
+  return { ensureStarted, update, onFragmentCollected, onMemoryEcho, onBloom, onFinalBloom, toggleMute, isMuted };
 }

@@ -121,6 +121,63 @@ a {
   text-shadow: 0 0 18px rgba(200, 220, 255, 0.6);
 }
 
+/* One-to-four-word scene-setting caption ("THE FLOOD") shown briefly at a
+   stage's start -- a place or a consequence, never a control or a rule, so
+   it stays inside what C5 allows. Sits near the top of the frame so it never
+   collides with .ending, which appears only during "won" on the final stage
+   long after any stage-title would have already hidden itself. */
+.stage-title {
+  position: fixed;
+  left: 50%;
+  top: 14%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.9s ease;
+  text-align: center;
+}
+
+.stage-title.is-visible {
+  opacity: 1;
+}
+
+.stage-title-text {
+  margin: 0;
+  color: #eaf3ff;
+  font: 600 1.1rem/1.4 system-ui, sans-serif;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-shadow: 0 0 16px rgba(200, 220, 255, 0.55);
+}
+
+/* The one line of text the prologue is allowed -- shown only once the held
+   orb (its explicit click target and the game's real audio-unlock gesture)
+   appears, so it never reads as an instruction, just a title card. Same
+   fixed/centered/fade pattern as .ending and .stage-title. */
+.prologue-title {
+  position: fixed;
+  left: 50%;
+  top: 62%;
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.9s ease;
+  text-align: center;
+}
+
+.prologue-title.is-visible {
+  opacity: 1;
+}
+
+.prologue-title-text {
+  margin: 0;
+  color: #eaf3ff;
+  font: 600 1.3rem/1.4 system-ui, sans-serif;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  text-shadow: 0 0 18px rgba(200, 220, 255, 0.6);
+}
+
 .visually-hidden {
   position: absolute;
   width: 1px;

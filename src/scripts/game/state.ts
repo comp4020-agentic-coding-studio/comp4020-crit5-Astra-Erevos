@@ -62,8 +62,22 @@ export type SceneArt = {
   skyBottom: string;
   silhouette: string;
   fog: string;
+  // The ground/horizon band render.ts paints below a fixed world-space
+  // horizon line — always noticeably darker than skyBottom (a true floor,
+  // not a continuation of the sky gradient) so every stage reads as a place
+  // standing on something, not just a backdrop. For a water stage this pair
+  // *is* the water surface, so it lines up with the horizon drawWaterReflection
+  // already reflects off of.
+  groundTop: string;
+  groundBottom: string;
   water?: boolean;
-  moon?: boolean;
+  // Absent through The Garden and The Lanterns, where glasshouse roof and
+  // overgrowth still hide the sky. First a small, dim glimpse in The Marsh;
+  // larger and clearer through The Ruins' broken roof; a full, close
+  // landmark only once the sanctuary itself is reached — so its growing
+  // presence across stages reads as heading toward one fixed destination,
+  // without any camera actually moving toward it.
+  moonVisibility?: "obscured" | "glimpse" | "near" | "full";
   skylightBeam?: boolean;
   frame?: FrameKind;
 };
@@ -85,14 +99,24 @@ export type SilhouetteShape = { x: number; y: number; w: number; h: number; phas
 export type StructureKind =
   | "glasshouseArch"
   | "brokenGlassPane"
+  | "keeperStatue"
   | "lampPost"
   | "ironGate"
+  | "irrigationPump"
   | "deadTree"
   | "cattailCluster"
   | "ruinArch"
   | "brokenColumn"
   | "statueFragment"
-  | "sanctuaryAltar";
+  | "sanctuaryAltar"
+  // Hero-landmark-only kinds — never used in the regular `structures` array,
+  // drawn much larger by drawHeroLandmark so each stage reads as one
+  // specific place at a glance rather than a backdrop of small props.
+  | "heroDomeIntact"
+  | "heroDomeSunken"
+  | "heroDomeBroken"
+  | "heroLanternGantry"
+  | "heroMural";
 export type StructureShape = {
   x: number;
   y: number;
@@ -102,6 +126,11 @@ export type StructureShape = {
   tilt?: number;
 };
 
+// The one cosmetic-only, screen-dominant background silhouette per stage —
+// drawn far larger than anything in `structures` (see drawHeroLandmark in
+// render.ts) so each stage reads as a specific place at a glance, not a
+// backdrop of small props. Never affects gameplay: purely which big shape
+// render.ts draws and how large.
 export type StageConfig = {
   name: string;
   mothStart: Vec2;
@@ -114,6 +143,12 @@ export type StageConfig = {
   silhouettesNear: SilhouetteShape[];
   silhouettesFar: SilhouetteShape[];
   structures: StructureShape[];
+  heroLandmark: StructureShape;
+  // Which full-screen cosmetic effect plays as *this* stage hands off to the
+  // next once its flower blooms — undefined on the final stage, which has
+  // no next stage to hand off to. Purely a render.ts/main.ts presentation
+  // choice; never read by moth.ts/outcome.ts/hazards.ts.
+  transitionOut?: "ignite" | "flood" | "drain" | "reveal";
 };
 
 export type MothState = { pos: Vec2; heading: Vec2; speed: number };
@@ -199,10 +234,12 @@ export const STAGES: StageConfig[] = [
     followSpeed: 340,
     maxTurnRate: 2.6,
     art: {
-      skyTop: "#0c1712",
-      skyBottom: "#050a08",
-      silhouette: "#0e2117",
+      skyTop: "#17271f",
+      skyBottom: "#0a130f",
+      silhouette: "#050a07",
       fog: "rgba(160,220,180,0.05)",
+      groundTop: "#14201a",
+      groundBottom: "#060a08",
       skylightBeam: true,
       frame: "glasshouseLeaves",
     },
@@ -213,7 +250,15 @@ export const STAGES: StageConfig[] = [
       { x: 500, y: 30, scale: 1.4, kind: "glasshouseArch" },
       { x: 850, y: 60, scale: 1.15, kind: "glasshouseArch" },
       { x: 500, y: 70, scale: 1, kind: "brokenGlassPane" },
+      // The keeper's statue, whole and distant, watching over where the
+      // flower stands — the only intact figure the whole game shows. Its
+      // ruined counterpart returns, headless, in The Ruins.
+      { x: 790, y: 420, scale: 0.5, kind: "keeperStatue" },
     ],
+    // The whole sanctuary dome, intact, looming behind the near arches — the
+    // one landmark every later stage's own hero shape answers back to.
+    heroLandmark: { x: 500, y: 260, scale: 4.2, kind: "heroDomeIntact" },
+    transitionOut: "ignite",
     silhouettesNear: silhouettes(1, 8, [700, 980], [70, 150], ["fern", "leafCluster", "fern", "grassTuft"]),
     silhouettesFar: silhouettes(2, 6, [560, 780], [50, 100], ["leafCluster", "vine"]),
   },
@@ -232,10 +277,13 @@ export const STAGES: StageConfig[] = [
     followSpeed: 340,
     maxTurnRate: 2.6,
     art: {
-      skyTop: "#160f10",
-      skyBottom: "#080505",
-      silhouette: "#20120f",
+      skyTop: "#2a1a14",
+      skyBottom: "#120a08",
+      silhouette: "#0a0605",
       fog: "rgba(255,170,110,0.04)",
+      groundTop: "#1d130d",
+      groundBottom: "#0a0605",
+      moonVisibility: "obscured",
       frame: "hangingVines",
     },
     // A stone path deep enough into the garden that human hands built
@@ -245,7 +293,15 @@ export const STAGES: StageConfig[] = [
       { x: 130, y: 430, scale: 1.05, kind: "ironGate" },
       { x: 330, y: 660, scale: 1, kind: "lampPost" },
       { x: 720, y: 620, scale: 1, kind: "lampPost", flip: true },
+      // The irrigation system's own valve, cracked and already leaking —
+      // the mechanical cause of The Marsh one stage ahead, visible before
+      // the player ever reaches the water.
+      { x: 600, y: 730, scale: 1.05, kind: "irrigationPump" },
     ],
+    // The hoarding system made literal and large: a gantry rack of small
+    // lantern cages, looming over the one live lantern below it.
+    heroLandmark: { x: 500, y: 280, scale: 4, kind: "heroLanternGantry" },
+    transitionOut: "flood",
     silhouettesNear: silhouettes(11, 7, [720, 980], [70, 150], ["leafCluster", "vine", "grassTuft"]),
     silhouettesFar: silhouettes(12, 6, [600, 780], [50, 100], ["leafCluster", "vine"]),
   },
@@ -273,11 +329,14 @@ export const STAGES: StageConfig[] = [
     followSpeed: 340,
     maxTurnRate: 2.6,
     art: {
-      skyTop: "#0a1416",
-      skyBottom: "#04080a",
-      silhouette: "#0c2226",
+      skyTop: "#15282b",
+      skyBottom: "#071214",
+      silhouette: "#040a0b",
       fog: "rgba(150,210,220,0.07)",
+      groundTop: "#14282e",
+      groundBottom: "#050e11",
       water: true,
+      moonVisibility: "glimpse",
       frame: "reedFringe",
     },
     // Dead trees standing in the shallows and dense cattails along the
@@ -287,7 +346,15 @@ export const STAGES: StageConfig[] = [
       { x: 780, y: 620, scale: 1.1, kind: "deadTree", flip: true },
       { x: 380, y: 720, scale: 1, kind: "cattailCluster" },
       { x: 630, y: 700, scale: 1.15, kind: "cattailCluster" },
+      // The same lamp-post hardware from The Lanterns, toppled and half
+      // submerged near where the moth enters — the flood's arrival is what
+      // became of that system, not a new one.
+      { x: 130, y: 710, scale: 0.85, kind: "lampPost", tilt: 1.35 },
     ],
+    // The same dome from The Garden, now listing and half-submerged — the
+    // direct visual answer to what the flood actually did.
+    heroLandmark: { x: 500, y: 300, scale: 4.4, kind: "heroDomeSunken", tilt: 0.16 },
+    transitionOut: "drain",
     silhouettesNear: silhouettes(21, 6, [780, 960], [40, 90], ["reed", "reed", "deadBranch"]),
     silhouettesFar: silhouettes(22, 5, [650, 760], [30, 70], ["deadBranch", "reed"]),
   },
@@ -327,10 +394,13 @@ export const STAGES: StageConfig[] = [
     followSpeed: 340,
     maxTurnRate: 2.6,
     art: {
-      skyTop: "#0e0e12",
-      skyBottom: "#07070a",
-      silhouette: "#18181f",
+      skyTop: "#1c1c26",
+      skyBottom: "#0a0a10",
+      silhouette: "#08080b",
       fog: "rgba(200,190,220,0.05)",
+      groundTop: "#17151c",
+      groundBottom: "#0a090c",
+      moonVisibility: "near",
       frame: "ruinBranches",
     },
     // Collapsed archways and broken columns frame each fragment's approach
@@ -342,8 +412,20 @@ export const STAGES: StageConfig[] = [
       { x: 420, y: 500, scale: 1, kind: "brokenColumn" },
       { x: 590, y: 420, scale: 0.9, kind: "brokenColumn", tilt: 0.32 },
       { x: 770, y: 530, scale: 1, kind: "brokenColumn" },
+      // The keeper's statue again, now headless — the same figure glimpsed
+      // whole and distant back in The Garden.
       { x: 290, y: 610, scale: 1, kind: "statueFragment" },
+      // A glasshouse arch fragment, collapsed and half-buried — the same
+      // architecture as The Garden's opening room, this far into its own
+      // ruin.
+      { x: 480, y: 680, scale: 0.8, kind: "glasshouseArch", tilt: 1.1 },
     ],
+    // A ruined pictographic mural, split down the middle: the old cycle
+    // (crescent -> flower -> moth -> garden) on one side, the later ironwork
+    // that diverted it on the other — the stage's actual story reveal, not
+    // just a foreshadowing shape.
+    heroLandmark: { x: 500, y: 230, scale: 4.4, kind: "heroMural" },
+    transitionOut: "reveal",
     silhouettesNear: silhouettes(31, 8, [700, 960], [60, 130], ["vine", "leafCluster"]),
     silhouettesFar: silhouettes(32, 6, [560, 700], [40, 90], ["leafCluster", "vine"]),
   },
@@ -397,11 +479,13 @@ export const STAGES: StageConfig[] = [
     followSpeed: 340,
     maxTurnRate: 2.6,
     art: {
-      skyTop: "#0a0e1c",
-      skyBottom: "#05060d",
-      silhouette: "#141a34",
+      skyTop: "#131a30",
+      skyBottom: "#070a14",
+      silhouette: "#05070d",
       fog: "rgba(180,200,255,0.05)",
-      moon: true,
+      groundTop: "#101a2c",
+      groundBottom: "#050810",
+      moonVisibility: "full",
       frame: "sanctuaryBoughs",
     },
     // The ruins' architecture continues here and culminates in the altar the
@@ -414,10 +498,19 @@ export const STAGES: StageConfig[] = [
       { x: 460, y: 110, scale: 1.05, kind: "ruinArch" },
       { x: 150, y: 610, scale: 0.95, kind: "statueFragment" },
     ],
+    // The dome at its most complete, unbroken, directly behind the altar and
+    // the now-full moon — the visual resolution of every earlier stage's
+    // hero shape. No transitionOut: there's no next stage to hand off to.
+    heroLandmark: { x: 500, y: 230, scale: 4.6, kind: "heroDomeIntact" },
     silhouettesNear: silhouettes(41, 6, [780, 970], [50, 110], ["vine", "leafCluster", "deadBranch"]),
     silhouettesFar: silhouettes(42, 5, [640, 760], [35, 80], ["leafCluster", "vine"]),
   },
 ];
+
+// Short (1-4 word), non-tutorial scene-setting captions — one per stage,
+// shown briefly on entry (see main.ts). Deliberately not explanatory: they
+// name a place or a consequence, never a control or a rule.
+export const STAGE_TITLES: string[] = ["THE GARDEN", "WHAT WAS KEPT", "THE FLOOD", "WHAT REMAINS", "THE RETURN"];
 
 export function createInitialState(): GameState {
   const first = STAGES[0];
