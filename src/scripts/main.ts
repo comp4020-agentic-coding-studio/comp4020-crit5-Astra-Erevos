@@ -99,7 +99,7 @@ const prologueTitleOverlay = getPrologueTitleOverlay();
 const muteButton = getMuteButton();
 const audio = createAudio();
 
-// The fixed ~6.5s visual beat shown before any real gameplay -- see
+// The fixed ~9.2s visual beat shown before any real gameplay -- see
 // renderPrologue in render.ts. The real game loop (state, stageTime, audio)
 // stays completely untouched until this is done; prologueTime is its own
 // clock, independent of stageTime/introTime below.
@@ -159,8 +159,15 @@ let echoElapsed: number | null = null;
 let titleShownForStage = -1;
 let titleTimer = 0;
 
+// Capped at 2x: on a 3x/4x phone panel, rendering at native DPR would push
+// every full-viewport fill (sky, vignette, fades) and every gradient in
+// render.ts to 4-9x the pixel count for a sharpness gain nobody can see past
+// 2x on a canvas this size -- it was the other big frame-drop contributor
+// alongside the uncached glow() gradients.
+const MAX_DEVICE_PIXEL_RATIO = 2;
+
 function resize(): void {
-  const dpr = window.devicePixelRatio || 1;
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_PIXEL_RATIO);
   canvas.width = window.innerWidth * dpr;
   canvas.height = window.innerHeight * dpr;
   canvas.style.width = `${window.innerWidth}px`;
@@ -176,7 +183,7 @@ function resize(): void {
 // handler's normal pointermove/pointerdown, which browsers trust less as a
 // "real user gesture") is what actually fixes sound being silent until the
 // first death/Retry.
-const PROLOGUE_ORB_AT = 5.6;
+const PROLOGUE_ORB_AT = 9.2;
 
 function onPointerActivity(event: PointerEvent): void {
   if (!prologueDone) {
@@ -458,6 +465,7 @@ function frame(time: number): void {
     timeSec,
     maxProximity: maxHazardProximity(state.moth.pos, hazards),
     nearestHazardKind: nearestHazardKind(state.moth.pos, hazards),
+    stageIndex: state.stageIndex,
   });
 
   trail.push({ ...state.moth.pos });
