@@ -661,8 +661,21 @@ function drawHeroLandmark(
 // The sanctuary dome at hero scale — whole (The Garden, The Moon Flower),
 // half-submerged with a translucent waterline (The Marsh, the direct answer
 // to what the flood did), or torn open with a gap in its roofline (The
-// Ruins) — three readings of the same silhouette so every stage's landmark
+// Ruins) — three readings of the same structure so every stage's landmark
 // visibly answers the others instead of inventing a new shape each time.
+//
+// Built as three load-bearing tiers, widest at the ground and narrowing
+// upward, the way an actual domed building is put together rather than one
+// silhouette wearing a curved cap: a stone plinth wider than the wall above
+// it (the footing that is visibly carrying the load), a cylindrical
+// glass-and-iron drum wall standing on that plinth's ledge, and a
+// hemispherical roof rising from its own seam ring at the wall's top — a
+// dome, not a spire, so its rise stays under its own footprint width the
+// way a real dome is proportioned. The roof's gore panels sit at equal
+// angular spacing rather than equal x-spacing, so they compress toward the
+// silhouette's edges the way meridians on an actual sphere foreshorten — the
+// one change that turns a flat fan of identical wedges into a shape that
+// reads as a curved volume even before any shading is added.
 function drawHeroDomeMotif(
   ctx: CanvasRenderingContext2D,
   u: number,
@@ -672,17 +685,96 @@ function drawHeroDomeMotif(
   const submerge = opts.submerge ?? 0;
   const broken = opts.broken ?? false;
 
+  const R = u * 0.62; // drum wall radius
+  const RP = u * 0.82; // plinth (foundation) radius — wider than the wall it carries
+  const plinthH = u * 0.16;
+  const drumH = u * 0.4;
+  const domeH = R * 1.0;
+  const bulge = domeH * 0.1; // how far the roof curve's control point overshoots the apex, keeping the profile rounded rather than pointed
+
+  const yBase = u * 0.62; // ground line
+  const yPlinthTop = yBase - plinthH; // the ledge the wall sits down onto
+  const yDrumTop = yPlinthTop - drumH; // springing line: wall meets roof
+  const yApex = yDrumTop - domeH;
+
+  // Longitude lines at equal angular spacing (x = sin(angle)), not equal
+  // x-spacing — see the function comment above.
+  const gore = [-1, -0.7071, 0, 0.7071, 1];
+  const litOf = (i: number) => 1.5 - (i / (gore.length - 2)) * 1.2;
+
   ctx.save();
-  drawGroundContactShadow(ctx, u, u * 0.62, 1.3);
-  // The dome's full outer silhouette — a glass-material shadow tone as the
-  // base coat, so a broken/half-lit bay still reads as glass in shadow
-  // rather than falling back to the stage's ambient near-black.
+  drawGroundContactShadow(ctx, u, yBase, 1.35);
+
+  // --- Foundation: a flared stone plinth, wider than the wall it carries,
+  // split into a moonlit left face and a shadowed right face, capped by the
+  // flat round ledge the wall actually sits on. ---
+  withFace(ctx, shadeRgb(STONE_RGB, 0.95), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(-RP, yBase);
+    ctx.lineTo(-R * 1.05, yPlinthTop);
+    ctx.lineTo(0, yPlinthTop);
+    ctx.lineTo(0, yBase);
+    ctx.closePath();
+    ctx.fill();
+  });
+  withFace(ctx, shadeRgb(STONE_RGB, 0.55), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(0, yBase);
+    ctx.lineTo(0, yPlinthTop);
+    ctx.lineTo(R * 1.05, yPlinthTop);
+    ctx.lineTo(RP, yBase);
+    ctx.closePath();
+    ctx.fill();
+  });
+  withFace(ctx, shadeRgb(STONE_RGB, 1.1), 1, () => {
+    ctx.beginPath();
+    ctx.ellipse(0, yPlinthTop, R * 1.05, R * 1.05 * 0.22, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // --- Wall: the cylindrical drum, one gore bay per panel, lit left to
+  // shadowed right — the same material and the same ribs as the roof above
+  // it, because it is the same built surface continuing down to the ground
+  // rather than a second, unrelated shape stacked underneath. ---
+  for (let i = 0; i < gore.length - 1; i++) {
+    const f1 = gore[i];
+    const f2 = gore[i + 1];
+    if (broken && f2 > 0.1) continue; // the torn gap swallows this bay
+    const x1 = f1 * R;
+    const x2 = f2 * R;
+    withFace(ctx, shadeRgb(GLASS_RGB, litOf(i)), 1, () => {
+      ctx.beginPath();
+      ctx.moveTo(x1, yDrumTop);
+      ctx.lineTo(x1, yPlinthTop);
+      ctx.lineTo(x2, yPlinthTop);
+      ctx.lineTo(x2, yDrumTop);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
+  // The seam ring where the wall's flat top meets the dome's curve — the
+  // actual structural joint a cupola has, rather than letting the roof
+  // curve start straight off the wall with no transition between them. A
+  // stroked band, not a filled disc — a cornice course, not a floor.
+  withFace(ctx, shadeRgb(IRON_RGB, 0.75), 1, () => {
+    ctx.lineWidth = Math.max(2, u * 0.04);
+    ctx.beginPath();
+    if (broken) {
+      ctx.ellipse(0, yDrumTop, R, R * 0.16, 0, Math.PI * 0.5, Math.PI * 1.5);
+    } else {
+      ctx.ellipse(0, yDrumTop, R, R * 0.16, 0, 0, Math.PI * 2);
+    }
+    ctx.stroke();
+  });
+
+  // --- Roof: the dome's outer silhouette as a base coat, so a broken or
+  // dim bay still reads as glass in shadow rather than falling back to the
+  // stage's ambient near-black. ---
   ctx.beginPath();
-  ctx.moveTo(-u * 0.75, u * 0.55);
-  ctx.lineTo(-u * 0.75, -u * 0.1);
-  ctx.quadraticCurveTo(-u * 0.75, -u * 1.05, 0, -u * 1.15);
-  ctx.quadraticCurveTo(u * 0.75, -u * 1.05, u * 0.75, -u * 0.1);
-  ctx.lineTo(u * 0.75, u * 0.55);
+  ctx.moveTo(-R, yDrumTop);
+  ctx.quadraticCurveTo(-R, yApex + bulge, 0, yApex);
+  ctx.quadraticCurveTo(R, yApex + bulge, R, yDrumTop);
   ctx.closePath();
   withFace(ctx, shadeRgb(GLASS_RGB, 0.3), 1, () => ctx.fill());
 
@@ -690,42 +782,36 @@ function drawHeroDomeMotif(
   // panel, lightest on the moonlit left side to darkest on the shadowed
   // right — the low-poly "one flat tone per face" look, built from the same
   // curve formula the rib struts already use so panels line up with them
-  // exactly. Fully opaque and pushed to a wide lit/shadow spread so
-  // neighboring bays read as distinct faces instead of blending into one
-  // pale wash.
-  const domeRibFractions = [-0.82, -0.42, 0, 0.42, 0.82];
-  for (let i = 0; i < domeRibFractions.length - 1; i++) {
-    const f1 = domeRibFractions[i];
-    const f2 = domeRibFractions[i + 1];
+  // exactly.
+  for (let i = 0; i < gore.length - 1; i++) {
+    const f1 = gore[i];
+    const f2 = gore[i + 1];
     if (broken && f2 > 0.1) continue; // the torn gap swallows this bay
-    const x1 = f1 * u * 0.75;
-    const x2 = f2 * u * 0.75;
-    const lit = 1.5 - (i / (domeRibFractions.length - 2)) * 1.2;
-    withFace(ctx, shadeRgb(GLASS_RGB, lit), 1, () => {
+    const x1 = f1 * R;
+    const x2 = f2 * R;
+    withFace(ctx, shadeRgb(GLASS_RGB, litOf(i)), 1, () => {
       ctx.beginPath();
-      ctx.moveTo(0, -u * 1.15);
-      ctx.quadraticCurveTo(x1, -u * 1.05, x1, -u * 0.1);
-      ctx.lineTo(x1 * 0.97, u * 0.5);
-      ctx.lineTo(x2 * 0.97, u * 0.5);
-      ctx.lineTo(x2, -u * 0.1);
-      ctx.quadraticCurveTo(x2, -u * 1.05, 0, -u * 1.15);
+      ctx.moveTo(0, yApex);
+      ctx.quadraticCurveTo(x1, yApex + bulge, x1, yDrumTop);
+      ctx.lineTo(x2, yDrumTop);
+      ctx.quadraticCurveTo(x2, yApex + bulge, 0, yApex);
       ctx.closePath();
       ctx.fill();
     });
   }
 
-  // Real iron mullions between the bays — filled strips, not hairlines, so
-  // the frame has its own dark material presence against the colored glass
-  // instead of the whole roof reading as one undifferentiated pale shape.
-  for (const f of domeRibFractions) {
+  // Iron ribs/mullions — one continuous structural member per bay, roof rib
+  // flowing straight into wall mullion, so roof and wall read as one built
+  // frame instead of two shapes stacked with no shared structure.
+  for (const f of gore) {
     if (broken && f > 0.1) continue;
-    const baseX = f * u * 0.75;
+    const x = f * R;
     withFace(ctx, shadeRgb(IRON_RGB, 0.55), 1, () => {
-      ctx.lineWidth = Math.max(2, u * 0.032);
+      ctx.lineWidth = Math.max(2, u * 0.03);
       ctx.beginPath();
-      ctx.moveTo(0, -u * 1.15);
-      ctx.quadraticCurveTo(baseX, -u * 1.05, baseX, -u * 0.1);
-      ctx.lineTo(baseX * 0.97, u * 0.5);
+      ctx.moveTo(0, yApex);
+      ctx.quadraticCurveTo(x, yApex + bulge, x, yDrumTop);
+      ctx.lineTo(x, yPlinthTop);
       ctx.stroke();
     });
   }
@@ -733,27 +819,21 @@ function drawHeroDomeMotif(
   withRimLight(ctx, 0.5, () => {
     ctx.lineWidth = Math.max(1, u * 0.025);
     ctx.beginPath();
-    ctx.moveTo(-u * 0.75, -u * 0.1);
-    ctx.quadraticCurveTo(-u * 0.75, -u * 1.05, 0, -u * 1.15);
-    if (!broken) ctx.quadraticCurveTo(u * 0.75, -u * 1.05, u * 0.75, -u * 0.1);
+    ctx.moveTo(-R, yDrumTop);
+    ctx.quadraticCurveTo(-R, yApex + bulge, 0, yApex);
+    if (!broken) ctx.quadraticCurveTo(R, yApex + bulge, R, yDrumTop);
     ctx.stroke();
   });
 
-  // Radiating dome ribs, each converging on the apex the way a real
-  // greenhouse cupola's structural members do, continuing straight down as
-  // wall mullions below the roofline — one continuous strut per bay, so the
-  // roof and the drum wall read as one built structure instead of two
-  // unrelated shapes stacked on top of each other.
-  const ribFractions = [-0.82, -0.42, 0, 0.42, 0.82];
   withRimLight(ctx, 0.3, () => {
-    ctx.lineWidth = Math.max(1, u * 0.018);
-    for (const f of ribFractions) {
+    ctx.lineWidth = Math.max(1, u * 0.016);
+    for (const f of gore) {
       if (broken && f > 0.1) continue; // the torn gap swallows these ribs
-      const baseX = f * u * 0.75;
+      const x = f * R;
       ctx.beginPath();
-      ctx.moveTo(0, -u * 1.15);
-      ctx.quadraticCurveTo(baseX, -u * 1.05, baseX, -u * 0.1);
-      ctx.lineTo(baseX * 0.97, u * 0.5);
+      ctx.moveTo(0, yApex);
+      ctx.quadraticCurveTo(x, yApex + bulge, x, yDrumTop);
+      ctx.lineTo(x, yPlinthTop);
       ctx.stroke();
     }
   });
@@ -762,11 +842,12 @@ function drawHeroDomeMotif(
   // radiating ribs above, this is the lattice that actually reads as a
   // paned glass dome rather than a plain rounded silhouette.
   withRimLight(ctx, 0.2, () => {
-    ctx.lineWidth = Math.max(1, u * 0.016);
+    ctx.lineWidth = Math.max(1, u * 0.014);
     for (let i = 1; i <= 3; i++) {
       if (broken && i === 1) continue; // the torn gap swallows the top ring
-      const y = -u * 1.05 + i * u * 0.28;
-      const half = u * 0.72 * (i / 3);
+      const t = i / 3.6;
+      const y = yApex + t * domeH;
+      const half = R * t * 0.98;
       ctx.beginPath();
       ctx.moveTo(-half, y);
       ctx.lineTo(half, y);
@@ -774,24 +855,50 @@ function drawHeroDomeMotif(
     }
   });
 
-  // The entrance arch cut into the drum wall, with the Moon Flower's own
-  // light glimpsed inside — one warm/cool detail that says "this building
-  // holds something," not just "this is a dark dome." Lost once the water
-  // is high enough to have already swallowed the doorway.
+  // The entrance: a real hole cut into the wall — a dark interior behind a
+  // lit frame, sitting on the plinth's own ledge with a stone step bridging
+  // up from the ground — rather than an arch line drawn over solid fill.
+  // Lost once the water is high enough to have already swallowed the
+  // doorway.
   if (submerge < 0.5) {
+    const doorHalf = R * 0.2;
+    const doorTop = yPlinthTop - drumH * 0.82;
+
+    withFace(ctx, shadeRgb(STONE_RGB, 0.85), 1, () => {
+      ctx.beginPath();
+      ctx.moveTo(-doorHalf * 1.4, yBase);
+      ctx.lineTo(-doorHalf * 1.1, yPlinthTop);
+      ctx.lineTo(doorHalf * 1.1, yPlinthTop);
+      ctx.lineTo(doorHalf * 1.4, yBase);
+      ctx.closePath();
+      ctx.fill();
+    });
+
+    withFace(ctx, "8,10,10", 0.85, () => {
+      ctx.beginPath();
+      ctx.moveTo(-doorHalf, yPlinthTop);
+      ctx.lineTo(-doorHalf, doorTop + doorHalf * 0.5);
+      ctx.quadraticCurveTo(-doorHalf, doorTop, 0, doorTop);
+      ctx.quadraticCurveTo(doorHalf, doorTop, doorHalf, doorTop + doorHalf * 0.5);
+      ctx.lineTo(doorHalf, yPlinthTop);
+      ctx.closePath();
+      ctx.fill();
+    });
+
     withRimLight(ctx, 0.45, () => {
       ctx.lineWidth = Math.max(1, u * 0.02);
       ctx.beginPath();
-      ctx.moveTo(-u * 0.22, u * 0.55);
-      ctx.lineTo(-u * 0.22, u * 0.22);
-      ctx.quadraticCurveTo(-u * 0.22, u * 0.06, 0, u * 0.04);
-      ctx.quadraticCurveTo(u * 0.22, u * 0.06, u * 0.22, u * 0.22);
-      ctx.lineTo(u * 0.22, u * 0.55);
+      ctx.moveTo(-doorHalf, yPlinthTop);
+      ctx.lineTo(-doorHalf, doorTop + doorHalf * 0.5);
+      ctx.quadraticCurveTo(-doorHalf, doorTop, 0, doorTop);
+      ctx.quadraticCurveTo(doorHalf, doorTop, doorHalf, doorTop + doorHalf * 0.5);
+      ctx.lineTo(doorHalf, yPlinthTop);
       ctx.stroke();
     });
+
     ctx.save();
     ctx.globalCompositeOperation = "lighter";
-    glow(ctx, { x: 0, y: u * 0.32 }, u * 0.4, `rgba(210,222,255,${(broken ? 0.12 : 0.26).toFixed(3)})`);
+    glow(ctx, { x: 0, y: (doorTop + yPlinthTop) / 2 }, doorHalf * 1.6, `rgba(210,222,255,${(broken ? 0.12 : 0.26).toFixed(3)})`);
     ctx.restore();
   }
 
@@ -801,12 +908,12 @@ function drawHeroDomeMotif(
     withRimLight(ctx, 0.4, () => {
       ctx.lineWidth = Math.max(1, u * 0.02);
       ctx.beginPath();
-      ctx.moveTo(0, -u * 1.15);
-      ctx.lineTo(0, -u * 1.32);
+      ctx.moveTo(0, yApex);
+      ctx.lineTo(0, yApex - u * 0.18);
       ctx.stroke();
     });
     ctx.save();
-    ctx.translate(0, -u * 1.34);
+    ctx.translate(0, yApex - u * 0.2);
     drawCrescentMark(ctx, u * 0.09, 0.35 + 0.08 * Math.sin(timeSec * 0.5));
     ctx.restore();
   }
@@ -814,14 +921,14 @@ function drawHeroDomeMotif(
   if (broken) {
     // The torn gap itself: a jagged crack rendered as a bright highlighted
     // edge cutting across the solid fill, rather than an actual hole — the
-    // dome stays one legible dark mass even where its roofline is broken.
+    // dome stays one legible mass even where its roofline is broken.
     withRimLight(ctx, 0.55, () => {
       ctx.lineWidth = Math.max(1, u * 0.03);
       ctx.beginPath();
-      ctx.moveTo(u * 0.05, -u * 1.02);
-      ctx.lineTo(u * 0.22, -u * 0.72);
-      ctx.lineTo(u * 0.4, -u * 0.85);
-      ctx.lineTo(u * 0.6, -u * 0.5);
+      ctx.moveTo(0.067 * R, yApex + 0.124 * domeH);
+      ctx.lineTo(0.293 * R, yApex + 0.409 * domeH);
+      ctx.lineTo(0.533 * R, yApex + 0.286 * domeH);
+      ctx.lineTo(0.8 * R, yApex + 0.619 * domeH);
       ctx.stroke();
     });
   }
@@ -830,11 +937,12 @@ function drawHeroDomeMotif(
   if (submerge > 0) {
     // Clip the lower `submerge` fraction of the dome under a translucent
     // water band, with a faint ripple line at the waterline — the same
-    // silhouette, just half swallowed, rather than a shorter dome.
-    const waterY = u * 0.55 - u * 1.7 * submerge;
+    // structure, just half swallowed, rather than a shorter dome.
+    const totalH = yBase - yApex;
+    const waterY = yBase - totalH * submerge;
     ctx.save();
     ctx.fillStyle = "rgba(35,65,75,0.4)";
-    ctx.fillRect(-u * 0.9, waterY, u * 1.8, u * 1.5);
+    ctx.fillRect(-RP * 1.15, waterY, RP * 2.3, totalH * 1.3);
     ctx.restore();
 
     const wobble = Math.sin(timeSec * 1.1) * u * 0.03;
@@ -843,8 +951,8 @@ function drawHeroDomeMotif(
     ctx.strokeStyle = "rgba(180,210,225,0.3)";
     ctx.lineWidth = Math.max(1, u * 0.02);
     ctx.beginPath();
-    ctx.moveTo(-u * 0.85, waterY + wobble);
-    ctx.lineTo(u * 0.85, waterY - wobble);
+    ctx.moveTo(-RP * 1.1, waterY + wobble);
+    ctx.lineTo(RP * 1.1, waterY - wobble);
     ctx.stroke();
     ctx.restore();
   }
@@ -858,32 +966,62 @@ function drawHeroDomeMotif(
 // the light that should have gone back to the Moon Flower.
 function drawHeroLanternGantryMotif(ctx: CanvasRenderingContext2D, u: number, timeSec: number) {
   ctx.save();
-  drawGroundContactShadow(ctx, u, u * 0.94, 1.4);
+  drawGroundContactShadow(ctx, u, u * 0.94, 1.5);
 
-  // The two legs as tapered posts, wider at the foot the way a real tower's
-  // are, rather than uniform bars. Each leg is two flat iron faces split down
-  // its centerline — a moonlit front face and a shadowed side face — instead
-  // of one flat silhouette, the same round-bar illusion the lantern ribs
-  // already use but as solid panels rather than hairlines.
-  const legTopHalf = u * 0.035;
-  const legBottomHalf = u * 0.065;
+  // The two legs as an A-frame, not a pair of parallel uprights: wide-set
+  // feet narrowing to a tighter head, the same wider-footprint-than-crown
+  // logic the dome's plinth uses, transposed to a truss tower — a real
+  // gantry/derrick is a stable tripod-like frame, not two vertical bars that
+  // happen to have a crossbeam. `legX(side, t)` gives each leg's centerline
+  // at any height (t=0 top, t=1 ground) so the X-braces below can follow the
+  // same taper instead of connecting to straight verticals.
+  const yTop = -u * 1.0;
+  const yBase = u * 0.9;
+  const legTopX = u * 0.34;
+  const legBaseX = u * 0.74;
+  const legX = (side: number, t: number) => side * (legTopX + (legBaseX - legTopX) * t);
+  const legTopHalf = u * 0.045;
+  const legBottomHalf = u * 0.075;
+
+  // A stout base tie beam bolted between the two feet — the piece that
+  // actually answers "why does this stand": a wide triangulated footprint
+  // locked together at ground level, not two independent posts planted
+  // side by side.
+  withFace(ctx, shadeRgb(IRON_RGB, 0.5), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(-legBaseX - legBottomHalf * 1.4, yBase + u * 0.02);
+    ctx.lineTo(legBaseX + legBottomHalf * 1.4, yBase + u * 0.02);
+    ctx.lineTo(legBaseX + legBottomHalf * 1.1, yBase - u * 0.09);
+    ctx.lineTo(-legBaseX - legBottomHalf * 1.1, yBase - u * 0.09);
+    ctx.closePath();
+    ctx.fill();
+  });
+  withRimLight(ctx, 0.3, () => {
+    ctx.lineWidth = Math.max(1, u * 0.014);
+    ctx.beginPath();
+    ctx.moveTo(-legBaseX - legBottomHalf * 1.4, yBase + u * 0.02);
+    ctx.lineTo(legBaseX + legBottomHalf * 1.4, yBase + u * 0.02);
+    ctx.stroke();
+  });
+
   for (const side of [1, -1]) {
-    const cx = side * u * 0.55;
+    const cxTop = legX(side, 0);
+    const cxBottom = legX(side, 1);
     withFace(ctx, shadeRgb(IRON_RGB, 0.45), 1, () => {
       ctx.beginPath();
-      ctx.moveTo(cx - legTopHalf, -u * 1.0);
-      ctx.lineTo(cx - legBottomHalf, u * 0.9);
-      ctx.lineTo(cx + legBottomHalf, u * 0.9);
-      ctx.lineTo(cx + legTopHalf, -u * 1.0);
+      ctx.moveTo(cxTop - legTopHalf, yTop);
+      ctx.lineTo(cxBottom - legBottomHalf, yBase);
+      ctx.lineTo(cxBottom + legBottomHalf, yBase);
+      ctx.lineTo(cxTop + legTopHalf, yTop);
       ctx.closePath();
       ctx.fill();
     });
     withFace(ctx, shadeRgb(IRON_RGB, 1.2), 1, () => {
       ctx.beginPath();
-      ctx.moveTo(cx - legTopHalf, -u * 1.0);
-      ctx.lineTo(cx - legBottomHalf, u * 0.9);
-      ctx.lineTo(cx, u * 0.9);
-      ctx.lineTo(cx, -u * 1.0);
+      ctx.moveTo(cxTop - legTopHalf, yTop);
+      ctx.lineTo(cxBottom - legBottomHalf, yBase);
+      ctx.lineTo(cxBottom, yBase);
+      ctx.lineTo(cxTop, yTop);
       ctx.closePath();
       ctx.fill();
     });
@@ -891,25 +1029,25 @@ function drawHeroLanternGantryMotif(ctx: CanvasRenderingContext2D, u: number, ti
     // leg and pooled at the base — the detail that says old iron, not a
     // clean silhouette.
     withShadowEdge(ctx, 0.5, () => {
-      ctx.fillRect(cx - legBottomHalf * 1.3, u * 0.86, legBottomHalf * 2.6, u * 0.05);
+      ctx.fillRect(cxBottom - legBottomHalf * 1.3, yBase - u * 0.04, legBottomHalf * 2.6, u * 0.05);
     });
-    drawRustFleck(ctx, cx - legBottomHalf * 0.4, u * 0.82, u * 0.045, side * 3.1);
-    drawRustFleck(ctx, cx + legBottomHalf * 0.5, u * 0.5, u * 0.03, side * 5.7);
+    drawRustFleck(ctx, cxBottom - legBottomHalf * 0.4, yBase - u * 0.08, u * 0.045, side * 3.1);
+    drawRustFleck(ctx, cxBottom + legBottomHalf * 0.5, u * 0.5, u * 0.03, side * 5.7);
   }
 
-  // X-braced lattice ties between the legs, in place of plain ladder rungs —
-  // this is the silhouette that actually reads as scaffold/gantry ironwork.
+  // X-braced lattice ties between the legs, following each leg's own taper
+  // via `legX` rather than assuming a fixed span at every row.
   withRimLight(ctx, 0.3, () => {
     ctx.lineWidth = Math.max(1, u * 0.016);
     const rows = 5;
     for (let i = 0; i < rows; i++) {
-      const y0 = -u * 1.0 + (i / rows) * u * 1.9;
-      const y1 = -u * 1.0 + ((i + 1) / rows) * u * 1.9;
+      const t0 = i / rows;
+      const t1 = (i + 1) / rows;
       ctx.beginPath();
-      ctx.moveTo(-u * 0.52, y0);
-      ctx.lineTo(u * 0.52, y1);
-      ctx.moveTo(u * 0.52, y0);
-      ctx.lineTo(-u * 0.52, y1);
+      ctx.moveTo(legX(-1, t0), yTop + t0 * (yBase - yTop));
+      ctx.lineTo(legX(1, t1), yTop + t1 * (yBase - yTop));
+      ctx.moveTo(legX(1, t0), yTop + t0 * (yBase - yTop));
+      ctx.lineTo(legX(-1, t1), yTop + t1 * (yBase - yTop));
       ctx.stroke();
     }
   });
@@ -919,11 +1057,11 @@ function drawHeroLanternGantryMotif(ctx: CanvasRenderingContext2D, u: number, ti
   withRimLight(ctx, 0.4, () => {
     ctx.lineWidth = Math.max(1, u * 0.02);
     ctx.beginPath();
-    ctx.moveTo(-u * 0.68, -u * 1.0);
-    ctx.lineTo(u * 0.68, -u * 1.0);
+    ctx.moveTo(legX(-1, 0) - u * 0.1, yTop);
+    ctx.lineTo(legX(1, 0) + u * 0.1, yTop);
     ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(0, -u * 1.0);
+    ctx.moveTo(0, yTop);
     ctx.lineTo(0, -u * 0.78);
     ctx.stroke();
     ctx.beginPath();
@@ -1034,7 +1172,45 @@ function drawGantryLanternCage(
 // it's the interruption being read, not the memory being restored.
 function drawHeroMuralMotif(ctx: CanvasRenderingContext2D, u: number, timeSec: number, awakenT: number) {
   ctx.save();
-  drawGroundContactShadow(ctx, u, u * 0.92, 1.6);
+  drawGroundContactShadow(ctx, u, u * 1.02, 1.8);
+
+  // A flared plinth block the slab is actually socketed into — without it
+  // the tablet is a flat cutout resting its bottom edge directly on the
+  // ground shadow, which is exactly the "symbol/diagram" silhouette this
+  // pass is fixing. The plinth top overlaps the tablet's own foot slightly
+  // so the slab visibly rises out of stone rather than floating above it.
+  const plinthTopY = u * 0.78;
+  const plinthBottomY = u * 1.04;
+  const plinthTopHalf = u * 1.0;
+  const plinthBottomHalf = u * 1.14;
+  withFace(ctx, shadeRgb(STONE_RGB, 0.55), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(-plinthTopHalf, plinthTopY);
+    ctx.lineTo(-plinthBottomHalf, plinthBottomY);
+    ctx.lineTo(plinthBottomHalf, plinthBottomY);
+    ctx.lineTo(plinthTopHalf, plinthTopY);
+    ctx.closePath();
+    ctx.fill();
+  });
+  withFace(ctx, shadeRgb(STONE_RGB, 0.85), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(-plinthTopHalf, plinthTopY);
+    ctx.lineTo(-plinthBottomHalf, plinthBottomY);
+    ctx.lineTo(0, plinthBottomY);
+    ctx.lineTo(0, plinthTopY);
+    ctx.closePath();
+    ctx.fill();
+  });
+  withRimLight(ctx, 0.25, () => {
+    ctx.lineWidth = Math.max(1, u * 0.014);
+    ctx.beginPath();
+    ctx.moveTo(-plinthTopHalf, plinthTopY);
+    ctx.lineTo(-plinthBottomHalf, plinthBottomY);
+    ctx.lineTo(plinthBottomHalf, plinthBottomY);
+    ctx.lineTo(plinthTopHalf, plinthTopY);
+    ctx.stroke();
+  });
+
   const tabletPath = new Path2D();
   tabletPath.moveTo(-u * 0.95, u * 0.85);
   tabletPath.lineTo(-u * 0.95, -u * 0.55);
@@ -1043,6 +1219,32 @@ function drawHeroMuralMotif(ctx: CanvasRenderingContext2D, u: number, timeSec: n
   tabletPath.quadraticCurveTo(u * 0.95, -u * 0.9, u * 0.95, -u * 0.55);
   tabletPath.lineTo(u * 0.95, u * 0.85);
   tabletPath.closePath();
+
+  // The slab's own depth: an extruded bottom face and right face peeking
+  // out from behind the tablet's edge, as if seen from slightly above and
+  // to the left — the cheapest honest way to say "this stone has real
+  // thickness" instead of a bevel stroke pretending a flat fill is a solid.
+  const depthDx = u * 0.05;
+  const depthDy = u * 0.09;
+  withFace(ctx, shadeRgb(STONE_RGB, 0.35), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(-u * 0.95, u * 0.85);
+    ctx.lineTo(u * 0.95, u * 0.85);
+    ctx.lineTo(u * 0.95 + depthDx, u * 0.85 + depthDy);
+    ctx.lineTo(-u * 0.95 + depthDx, u * 0.85 + depthDy);
+    ctx.closePath();
+    ctx.fill();
+  });
+  withFace(ctx, shadeRgb(STONE_RGB, 0.4), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(u * 0.95, -u * 0.55);
+    ctx.lineTo(u * 0.95, u * 0.85);
+    ctx.lineTo(u * 0.95 + depthDx, u * 0.85 + depthDy);
+    ctx.lineTo(u * 0.95 + depthDx, -u * 0.55 + depthDy);
+    ctx.closePath();
+    ctx.fill();
+  });
+
   // A real sandstone slab, not an inherited near-black silhouette — a
   // shadowed base coat with a lighter, moonlit-side face clipped over its
   // left half so the tablet reads as one solid stone mass with two facets,
@@ -1775,6 +1977,22 @@ function drawGlasshouseArchMotif(ctx: CanvasRenderingContext2D, u: number) {
     ctx.lineTo(u * 0.44, u * 0.9);
     ctx.stroke();
   });
+  // Small iron foot pads where each leg meets the ground -- the frame is
+  // bolted to a footing here, not a pane of glass that simply stops at the
+  // silhouette line.
+  for (const side of [-1, 1] as const) {
+    const fx = side * u * 0.55;
+    withFace(ctx, shadeRgb(IRON_RGB, 0.5), 1, () => {
+      ctx.beginPath();
+      ctx.moveTo(fx - u * 0.1, u * 0.9);
+      ctx.lineTo(fx + u * 0.1, u * 0.9);
+      ctx.lineTo(fx + u * 0.06, u * 0.78);
+      ctx.lineTo(fx - u * 0.06, u * 0.78);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
+
   // a wedge keystone locking the arch's crown, the way a real riveted-steel
   // or masonry frame would actually carry its own peak load
   ctx.beginPath();
@@ -1941,12 +2159,34 @@ function drawLampPostMotif(ctx: CanvasRenderingContext2D, u: number) {
     ctx.lineTo(u * 0.015, -u * 0.68);
     ctx.stroke();
   });
-  withFace(ctx, shadeRgb(IRON_RGB, 0.45), 1, () => {
+  // A flared base casting the post actually stands on, not a stick planted
+  // straight into the ground — wide enough at the foot to read as bolted
+  // ironwork, tapering up to meet the shaft the way the pump's own footing
+  // does.
+  withFace(ctx, shadeRgb(IRON_RGB, 0.5), 1, () => {
     ctx.beginPath();
-    ctx.ellipse(0, u * 0.9, u * 0.14, u * 0.05, 0, 0, Math.PI * 2);
+    ctx.moveTo(-u * 0.16, u * 0.92);
+    ctx.lineTo(u * 0.16, u * 0.92);
+    ctx.lineTo(u * 0.08, u * 0.76);
+    ctx.lineTo(-u * 0.08, u * 0.76);
+    ctx.closePath();
     ctx.fill();
   });
-  drawRustFleck(ctx, u * 0.08, u * 0.89, u * 0.04, 4.4);
+  withFace(ctx, shadeRgb(IRON_RGB, 1.1), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(-u * 0.16, u * 0.92);
+    ctx.lineTo(0, u * 0.92);
+    ctx.lineTo(0, u * 0.76);
+    ctx.lineTo(-u * 0.08, u * 0.76);
+    ctx.closePath();
+    ctx.fill();
+  });
+  withFace(ctx, shadeRgb(IRON_RGB, 0.45), 1, () => {
+    ctx.beginPath();
+    ctx.ellipse(0, u * 0.93, u * 0.18, u * 0.055, 0, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  drawRustFleck(ctx, u * 0.1, u * 0.9, u * 0.04, 4.4);
   // a small decorative collar where the post meets the cage — a caretaker's
   // wayfinding lamp, built to be handsome, not a bare pole
   withRimLight(ctx, 0.35, () => {
@@ -1960,9 +2200,33 @@ function drawLampPostMotif(ctx: CanvasRenderingContext2D, u: number) {
     ctx.moveTo(-u * 0.2, -u * 0.7);
     ctx.lineTo(u * 0.2, -u * 0.7);
     ctx.stroke();
-    ctx.globalAlpha = 0.7;
+  });
+  // The lamp head as a real iron box, not a flat stroked outline — a front
+  // pane and a set-back top/side pair so it reads as a caged volume with a
+  // glass front, the same box-with-depth idiom the gantry's cages use.
+  const headSkew = u * 0.045;
+  withFace(ctx, shadeRgb(IRON_RGB, 0.4), 1, () => {
+    ctx.beginPath();
+    ctx.moveTo(-u * 0.1, -u * 0.95);
+    ctx.lineTo(u * 0.1, -u * 0.95);
+    ctx.lineTo(u * 0.1 + headSkew, -u * 0.95 - headSkew);
+    ctx.lineTo(-u * 0.1 + headSkew, -u * 0.95 - headSkew);
+    ctx.closePath();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(u * 0.1, -u * 0.95);
+    ctx.lineTo(u * 0.1, -u * 0.73);
+    ctx.lineTo(u * 0.1 + headSkew, -u * 0.73 - headSkew);
+    ctx.lineTo(u * 0.1 + headSkew, -u * 0.95 - headSkew);
+    ctx.closePath();
+    ctx.fill();
+  });
+  withFace(ctx, shadeRgb(GLASS_RGB, 0.7), 0.5, () => {
+    ctx.fillRect(-u * 0.1, -u * 0.95, u * 0.2, u * 0.22);
+  });
+  withRimLight(ctx, 0.3, () => {
+    ctx.lineWidth = Math.max(1, u * 0.012);
     ctx.strokeRect(-u * 0.1, -u * 0.95, u * 0.2, u * 0.22);
-    ctx.globalAlpha = 1;
   });
   ctx.save();
   ctx.translate(0, -u * 0.84);
@@ -2147,15 +2411,13 @@ function drawIrrigationPumpMotif(ctx: CanvasRenderingContext2D, u: number, timeS
 // and a vine already climbing one post.
 function drawIronGateMotif(ctx: CanvasRenderingContext2D, u: number) {
   ctx.save();
-  drawGroundContactShadow(ctx, u, u * 0.9, 1.1);
+  drawGroundContactShadow(ctx, u, u * 0.92, 1.15);
+
+  // The arch bar overhead, kept as a stroked curve -- an arch is legitimately
+  // a thin bent rail, and this is the one element in the gate that already
+  // reads as bent iron rather than a straight primitive.
   ctx.lineWidth = Math.max(1, u * 0.04);
   withFace(ctx, shadeRgb(IRON_RGB, 0.6), 1, () => {
-    ctx.beginPath();
-    ctx.moveTo(-u * 0.5, u * 0.9);
-    ctx.lineTo(-u * 0.5, -u * 0.6);
-    ctx.moveTo(u * 0.5, u * 0.9);
-    ctx.lineTo(u * 0.5, -u * 0.6);
-    ctx.stroke();
     ctx.beginPath();
     ctx.moveTo(-u * 0.5, -u * 0.6);
     ctx.quadraticCurveTo(0, -u * 0.95, u * 0.5, -u * 0.6);
@@ -2164,24 +2426,49 @@ function drawIronGateMotif(ctx: CanvasRenderingContext2D, u: number) {
   withRimLight(ctx, 0.4, () => {
     ctx.lineWidth = Math.max(1, u * 0.04);
     ctx.beginPath();
-    ctx.moveTo(-u * 0.5, u * 0.9);
-    ctx.lineTo(-u * 0.5, -u * 0.6);
+    ctx.moveTo(-u * 0.5, -u * 0.6);
     ctx.quadraticCurveTo(0, -u * 0.95, u * 0.5, -u * 0.6);
-    ctx.lineTo(u * 0.5, u * 0.9);
     ctx.stroke();
   });
-  // the posts' shadow face, offset in from the rim light -- so each post
-  // reads as a round-section bar standing in front of the arch, not a flat
-  // ribbon the arch was drawn onto
-  withShadowEdge(ctx, 0.3, () => {
-    ctx.lineWidth = Math.max(1, u * 0.018);
-    ctx.beginPath();
-    ctx.moveTo(-u * 0.5 + u * 0.02, u * 0.85);
-    ctx.lineTo(-u * 0.5 + u * 0.02, -u * 0.58);
-    ctx.moveTo(u * 0.5 + u * 0.02, u * 0.85);
-    ctx.lineTo(u * 0.5 + u * 0.02, -u * 0.58);
-    ctx.stroke();
-  });
+
+  // The two posts as real filled iron volumes, not constant-width strokes --
+  // a slight taper and a flared foot plate each, the wide-base-narrow-top
+  // logic every other structure in this pass uses, instead of a post that's
+  // the same thickness at the ground as at the top rail.
+  const postTopHalf = u * 0.032;
+  const postBottomHalf = u * 0.045;
+  for (const side of [-1, 1] as const) {
+    const cx = side * u * 0.5;
+    withFace(ctx, shadeRgb(IRON_RGB, 0.5), 1, () => {
+      ctx.beginPath();
+      ctx.moveTo(cx - postTopHalf, -u * 0.6);
+      ctx.lineTo(cx - postBottomHalf, u * 0.9);
+      ctx.lineTo(cx + postBottomHalf, u * 0.9);
+      ctx.lineTo(cx + postTopHalf, -u * 0.6);
+      ctx.closePath();
+      ctx.fill();
+    });
+    withFace(ctx, shadeRgb(IRON_RGB, 1.15), 1, () => {
+      ctx.beginPath();
+      ctx.moveTo(cx - postTopHalf, -u * 0.6);
+      ctx.lineTo(cx - postBottomHalf, u * 0.9);
+      ctx.lineTo(cx, u * 0.9);
+      ctx.lineTo(cx, -u * 0.6);
+      ctx.closePath();
+      ctx.fill();
+    });
+    // A flared foot plate bolted under each post -- the piece that says
+    // this is planted in the ground, not a line that just stops there.
+    withFace(ctx, shadeRgb(IRON_RGB, 0.45), 1, () => {
+      ctx.beginPath();
+      ctx.moveTo(cx - postBottomHalf * 2.4, u * 0.9);
+      ctx.lineTo(cx + postBottomHalf * 2.4, u * 0.9);
+      ctx.lineTo(cx + postBottomHalf * 1.7, u * 0.78);
+      ctx.lineTo(cx - postBottomHalf * 1.7, u * 0.78);
+      ctx.closePath();
+      ctx.fill();
+    });
+  }
   drawRustFleck(ctx, -u * 0.5, u * 0.82, u * 0.05, 1.9);
   drawRustFleck(ctx, u * 0.5, u * 0.5, u * 0.04, 7.4);
 
@@ -2273,6 +2560,18 @@ function drawDeadTreeMotif(ctx: CanvasRenderingContext2D, u: number) {
     });
     branch(x2, y2, angle - 0.5 - depth * 0.05, len * 0.68, depth - 1);
     branch(x2, y2, angle + 0.5 + depth * 0.05, len * 0.68, depth - 1);
+  }
+  // Root flare splaying into the ground before the trunk rises -- the
+  // detail that answers why a bare trunk this tall doesn't just tip over,
+  // instead of a line that touches the ground line and stops.
+  for (const side of [-1, 1] as const) {
+    withFace(ctx, shadeRgb(ORGANIC_RGB, 0.5), 1, () => {
+      ctx.lineWidth = Math.max(1, u * 0.05);
+      ctx.beginPath();
+      ctx.moveTo(0, u * 0.84);
+      ctx.quadraticCurveTo(side * u * 0.1, u * 0.89, side * u * 0.22, u * 0.92);
+      ctx.stroke();
+    });
   }
   branch(0, u * 0.9, -Math.PI / 2, u * 0.55, 4);
   ctx.restore();
