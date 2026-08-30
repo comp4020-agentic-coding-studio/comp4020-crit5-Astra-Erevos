@@ -31,9 +31,10 @@ const TRAIL_LENGTH = 22;
 // the "won" phase -- the earlier beats (bloom easing open, environment wash,
 // light motes, the moth's moonlit variant, and the memory montage of the
 // four earlier stages) are timed directly off extras.phaseTimer inside
-// render.ts. Bumped past the montage's own ~4.4-7.0s window so the text
-// never overlaps it.
-const ENDING_TEXT_AT = 7.2;
+// render.ts. Bumped past the montage's own ~4.4-9.4s window (four staggered,
+// held panels -- see ENDING_MONTAGE_* in render.ts) so the text never
+// overlaps it.
+const ENDING_TEXT_AT = 9.6;
 
 // How long the Memory Echo window stays open once a fragment is collected --
 // matches the fade-in/hold/fade-out envelope drawMemoryEcho shapes off echoT.
@@ -285,6 +286,7 @@ function advanceStage(): void {
   const next = STAGES[state.stageIndex + 1];
   state.stageIndex += 1;
   state.moth = { pos: { ...next.mothStart }, heading: state.moth.heading, speed: 0 };
+  state.light = null;
   state.fragmentsCollected = next.fragments.map(() => false);
   stageTime = 0;
   trail = [];

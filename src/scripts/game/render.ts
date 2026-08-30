@@ -212,8 +212,10 @@ export function render(
   const extinguish = isEnding ? Math.min(1, Math.max(0, (extras.phaseTimer - 3) / 2)) : 0;
 
   // The full set of things the environment should visibly react to this
-  // frame — the player's cool white light plus every hazard, warm amber for
-  // a lantern's flame, cool green for a wisp's glow.
+  // frame — the player's cool white light plus every hazard. Both hazard
+  // kinds now read as warning red (hot red-orange for a lantern's flame,
+  // pure red for a wisp's glow) so "red = death" holds regardless of stage,
+  // distinct from the vivid orange every stage's own target flower wears.
   const lightSources: LightSource[] = [];
   if (state.light && state.phase === "playing") {
     lightSources.push({ pos: state.light, rgb: "210,225,255", radius: 170 });
@@ -221,7 +223,7 @@ export function render(
   for (const hazard of stage.hazards) {
     lightSources.push({
       pos: hazard.pos,
-      rgb: hazard.kind === "lantern" ? "255,170,90" : "150,255,210",
+      rgb: hazard.kind === "lantern" ? "255,80,35" : "255,50,50",
       radius: hazard.influenceRadius ?? hazard.radius * 3,
     });
   }
@@ -3262,7 +3264,7 @@ function drawWaterReflection(
   glow(ctx, worldToScreen(camera, reflect(mothPos)), 42 * camera.scale, "rgba(210,205,235,0.5)");
   if (lightPos) glow(ctx, worldToScreen(camera, reflect(lightPos)), 90 * camera.scale, "rgba(200,225,255,0.6)");
   for (const hazard of stage.hazards) {
-    glow(ctx, worldToScreen(camera, reflect(hazard.pos)), hazard.radius * 2.4 * camera.scale, "rgba(150,255,210,0.4)");
+    glow(ctx, worldToScreen(camera, reflect(hazard.pos)), hazard.radius * 2.4 * camera.scale, "rgba(255,50,50,0.4)");
   }
   glow(
     ctx,
@@ -3366,10 +3368,32 @@ function drawLantern(
 ) {
   const p = worldToScreen(camera, worldPos);
   const r = worldRadius * camera.scale;
-  const flicker = 0.75 + 0.25 * Math.sin(timeSec * 6.5) + 0.08 * Math.sin(timeSec * 17.3);
-  const glowRgb = blendChannels([255, 180, 90], MOONLIGHT_RGB, extinguish);
-  const coreRgb = blendChannels([255, 235, 190], MOONLIGHT_RGB, extinguish);
-  const midRgb = blendChannels([255, 160, 70], MOONLIGHT_RGB, extinguish);
+  const flicker = 0.7 + 0.3 * Math.sin(timeSec * 6.5) + 0.12 * Math.sin(timeSec * 17.3) + 0.08 * Math.sin(timeSec * 29);
+  // A hot, saturated red-orange -- deliberately far from the flower's soft
+  // cream/gold palette (see drawFlower) so a hazard never reads as "another
+  // warm target" at a glance. Cools to the same pale moonlight every other
+  // hazard fades toward once extinguish kicks in during the ending.
+  const glowRgb = blendChannels([255, 60, 25], MOONLIGHT_RGB, extinguish);
+  const coreRgb = blendChannels([255, 150, 70], MOONLIGHT_RGB, extinguish);
+  const midRgb = blendChannels([255, 65, 25], MOONLIGHT_RGB, extinguish);
+
+  // A slow "warning" ring, expanding and fading on its own fixed loop
+  // regardless of proximity or the death surge -- so the lantern reads as
+  // dangerous from well outside its pull radius, not only once the moth is
+  // already close enough to feel it.
+  const warnPeriod = 1.6;
+  const warnT = ((((timeSec) % warnPeriod) + warnPeriod) % warnPeriod) / warnPeriod;
+  const warnAlpha = (1 - warnT) * 0.4 * (1 - extinguish * 0.85);
+  if (warnAlpha > 0.01) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = `rgba(${glowRgb},${warnAlpha.toFixed(3)})`;
+    ctx.lineWidth = Math.max(1, 2.4 * camera.scale);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y - r * 0.1, r * (1.4 + warnT * 2.6), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   ctx.strokeStyle = "rgba(40,28,18,0.9)";
   ctx.lineWidth = Math.max(1, 2 * camera.scale);
@@ -3379,7 +3403,7 @@ function drawLantern(
   ctx.stroke();
 
   ctx.globalCompositeOperation = "lighter";
-  glow(ctx, p, r * 3.2 * surge, `rgba(${glowRgb},${(0.45 * surge * flicker).toFixed(3)})`);
+  glow(ctx, p, r * 4.2 * surge, `rgba(${glowRgb},${(0.62 * surge * flicker).toFixed(3)})`);
   ctx.globalCompositeOperation = "source-over";
 
   ctx.save();
@@ -3437,14 +3461,34 @@ function drawLantern(
   ctx.beginPath();
   ctx.ellipse(0, 0, r * 0.32 * flicker, r * 0.5 * flicker, 0, 0, Math.PI * 2);
   ctx.fill();
+
+  // A few embers rising out through the cage top -- a motion cue that reads
+  // as "this is live fire" even at a glance, on top of the flicker/warning
+  // ring above.
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = 0; i < 3; i++) {
+    const cycle = 1.8 + i * 0.3;
+    const et = ((((timeSec + i * 0.6) % cycle) + cycle) % cycle) / cycle;
+    const ex = Math.sin(i * 3.1 + et * 4) * r * 0.5;
+    const ey = -ch * 0.5 - et * r * 3.2;
+    const ea = (1 - et) * surge * 0.6;
+    if (ea <= 0.01) continue;
+    ctx.fillStyle = `rgba(${midRgb},${ea.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(ex, ey, Math.max(0.8, r * 0.09 * (1 - et * 0.4)), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalCompositeOperation = "source-over";
   ctx.restore();
 }
 
-// A will-o'-the-wisp: a soft drifting blob in cool pale green with curling
+// A will-o'-the-wisp: a soft drifting blob in warning red with curling
 // tendrils — the marsh's ghost lights, carried through as the game's
-// recurring danger motif all the way to the finale. During the ending,
-// `extinguish` fades its glow toward the player's own pale moonlight —
-// unhoused light finally settling, rather than being snuffed out.
+// recurring danger motif all the way to the finale, in the same red family
+// as the lantern hazard so "red = death" holds across every stage that
+// wears one. During the ending, `extinguish` fades its glow toward the
+// player's own pale moonlight — unhoused light finally settling, rather
+// than being snuffed out.
 function drawWillOWisp(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
@@ -3457,10 +3501,10 @@ function drawWillOWisp(
   const p = worldToScreen(camera, worldPos);
   const r = worldRadius * camera.scale;
   const pulse = 0.8 + 0.2 * Math.sin(timeSec * 3.2);
-  const glowRgb = blendChannels([150, 255, 210], MOONLIGHT_RGB, extinguish);
-  const tendrilRgb = blendChannels([170, 255, 220], MOONLIGHT_RGB, extinguish);
-  const coreRgb = blendChannels([230, 255, 245], MOONLIGHT_RGB, extinguish);
-  const midRgb = blendChannels([150, 255, 210], MOONLIGHT_RGB, extinguish);
+  const glowRgb = blendChannels([255, 50, 50], MOONLIGHT_RGB, extinguish);
+  const tendrilRgb = blendChannels([255, 80, 70], MOONLIGHT_RGB, extinguish);
+  const coreRgb = blendChannels([255, 200, 190], MOONLIGHT_RGB, extinguish);
+  const midRgb = blendChannels([255, 50, 50], MOONLIGHT_RGB, extinguish);
 
   ctx.globalCompositeOperation = "lighter";
   glow(ctx, p, r * 3.6 * surge * pulse, `rgba(${glowRgb},${(0.4 * surge).toFixed(3)})`);
@@ -3482,7 +3526,7 @@ function drawWillOWisp(
   const core = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r * pulse);
   core.addColorStop(0, `rgba(${coreRgb},${(0.95 * surge).toFixed(3)})`);
   core.addColorStop(0.6, `rgba(${midRgb},${(0.75 * surge).toFixed(3)})`);
-  core.addColorStop(1, "rgba(90,200,170,0.1)");
+  core.addColorStop(1, "rgba(200,50,50,0.1)");
   ctx.fillStyle = core;
   ctx.beginPath();
   ctx.arc(p.x, p.y, r * 0.6 * pulse, 0, Math.PI * 2);
@@ -3537,40 +3581,87 @@ function drawFragment(
   const p = worldToScreen(camera, fragment.pos);
   const r = fragment.radius * camera.scale;
   const pulse = 0.85 + 0.15 * Math.sin(timeSec * 3 + index * 1.7);
+  const corePulse = 0.9 + 0.1 * Math.sin(timeSec * 5 + index * 2.3);
+
+  // Sonar ping: a ring that periodically expands outward and fades. Once
+  // backgrounds get busy (The Ruins, The Moon Flower) this motion cue reads
+  // from across the stage even when the fragment glyph itself is small.
+  const pingPeriod = 2.2;
+  const pingT = ((((timeSec + index * 0.7) % pingPeriod) + pingPeriod) % pingPeriod) / pingPeriod;
+  const pingAlpha = (1 - pingT) * 0.5;
+  if (pingAlpha > 0.01) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = `rgba(255,244,205,${pingAlpha.toFixed(3)})`;
+    ctx.lineWidth = Math.max(1, 1.6 * camera.scale);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, r * (1.2 + pingT * 5), 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
 
   ctx.globalCompositeOperation = "lighter";
-  glow(ctx, p, r * 3 * pulse, "rgba(210,225,255,0.5)");
+  // Outer halo is a cool cyan-white, deliberately not RIM_LIGHT_RGB and not
+  // the flower's amber/moon palettes, so it contrasts against warm or cool
+  // backdrops alike instead of blending into the ambient rim-light everything
+  // else in the scene wears.
+  glow(ctx, p, r * 5.5 * pulse, "rgba(160,230,255,0.4)");
+  glow(ctx, p, r * 2.6 * corePulse, "rgba(255,238,170,0.75)");
   ctx.globalCompositeOperation = "source-over";
 
   ctx.save();
   ctx.translate(p.x, p.y);
   ctx.rotate(timeSec * 0.5 + index);
-  ctx.scale(r * 0.6 * pulse, r * 0.6 * pulse);
-  ctx.fillStyle = "rgba(235,242,255,0.95)";
+  ctx.scale(r * 0.6 * corePulse, r * 0.6 * corePulse);
+  ctx.fillStyle = "rgba(255,250,225,0.98)";
   ctx.fill(FRAGMENT_PATH, "evenodd");
   ctx.restore();
 
-  for (let i = 0; i < 2; i++) {
-    const angle = timeSec * 1.4 + index * 2 + i * Math.PI;
-    const fx = p.x + Math.cos(angle) * r * 1.5;
-    const fy = p.y + Math.sin(angle) * r * 1.5;
-    ctx.fillStyle = "rgba(230,240,255,0.8)";
+  // A four-point starburst flare through the core reinforces "brightest,
+  // sharpest thing on screen" regardless of what's rendered behind it.
+  ctx.save();
+  ctx.translate(p.x, p.y);
+  ctx.rotate(timeSec * 0.35);
+  ctx.globalCompositeOperation = "lighter";
+  ctx.strokeStyle = `rgba(255,246,210,${(0.55 * corePulse).toFixed(3)})`;
+  ctx.lineWidth = Math.max(1, r * 0.12);
+  const flareLen = r * 2.4 * pulse;
+  ctx.beginPath();
+  ctx.moveTo(-flareLen, 0);
+  ctx.lineTo(flareLen, 0);
+  ctx.moveTo(0, -flareLen);
+  ctx.lineTo(0, flareLen);
+  ctx.stroke();
+  ctx.globalCompositeOperation = "source-over";
+  ctx.restore();
+
+  for (let i = 0; i < 4; i++) {
+    const angle = timeSec * 1.4 + index * 2 + i * (Math.PI / 2);
+    const fx = p.x + Math.cos(angle) * r * 1.8;
+    const fy = p.y + Math.sin(angle) * r * 1.8;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = "rgba(255,244,205,0.85)";
     ctx.beginPath();
-    ctx.arc(fx, fy, Math.max(0.6, r * 0.09), 0, Math.PI * 2);
+    ctx.arc(fx, fy, Math.max(0.6, r * 0.1), 0, Math.PI * 2);
     ctx.fill();
+    ctx.globalCompositeOperation = "source-over";
   }
 }
 
 // The safe target reads as an actual flower rooted to the ground (a stem
 // and two leaves for every non-goal flower) rather than a floating icon —
-// petals are built from PETAL_PATH teardrops, not ellipses. From The Ruins
-// on, a flower with fragments still owed renders as a visibly tighter,
-// dimmer bud with one pip per fragment lighting up as each is collected; it
-// only opens to its full bloom once every pip is lit. The final stage's
-// flower (isGoal) swaps the usual warm amber for a cool blue-white "moon"
-// palette, gains a second inner layer of petals and radiating moon-vein
-// lines once bloomed, and its bloom eases open over `openT` (0→1) instead
-// of snapping, for the ending.
+// petals are built from PETAL_PATH teardrops, not ellipses. Every stage's
+// flower wears the same vivid orange while unbloomed (bloom only ever goes
+// true in the brief win/ending window -- see main.ts), so "this is the
+// target" reads identically across every stage. From The Ruins on, a flower
+// with fragments still owed renders as a visibly tighter, dimmer bud with
+// one pip per fragment lighting up as each is collected; it only opens to
+// its full bloom once every pip is lit. The final stage's flower (isGoal)
+// swaps to a cool blue-white "moon" palette once bloomed -- a reveal that
+// only plays during the win/ending window, not during ordinary play --
+// gains a second inner layer of petals and radiating moon-vein lines, and
+// its bloom eases open over `openT` (0→1) instead of snapping, for the
+// ending.
 //
 // Outer petals are scaled so their tip reaches exactly `r*1.22*closedShrink`
 // from center — matching the ratio FLOWER_VISUAL_OVERSHOOT (see state.ts) is
@@ -3613,13 +3704,17 @@ function drawFlower(
   }
 
   ctx.globalCompositeOperation = "lighter";
-  const glowColor = isGoal
-    ? bloom
+  // Every stage's touch-to-win flower reads the same vivid orange while the
+  // player is still approaching it -- a consistent "this is the target," as
+  // distinct from every hazard's red as the palettes can get. `bloom` is
+  // only ever true in the brief win/ending window (see main.ts), so the
+  // final Moon Flower's cool blue-white bloom there still lands as a
+  // reveal, not something the player spends the stage looking at.
+  const glowColor = !bloom
+    ? "rgba(255,145,30,0.42)"
+    : isGoal
       ? "rgba(225,238,255,0.8)"
-      : "rgba(200,220,255,0.4)"
-    : bloom
-      ? "rgba(255,235,190,0.7)"
-      : "rgba(255,205,140,0.32)";
+      : "rgba(255,210,150,0.75)";
   glow(ctx, p, r * (isGoal ? 4.2 : 3.2) * closedShrink, glowColor);
   ctx.globalCompositeOperation = "source-over";
 
@@ -3632,13 +3727,11 @@ function drawFlower(
   ctx.rotate(Math.sin(extras.timeSec * (isGoal ? 0.68 : 0.6)) * 0.06);
 
   const outerPetals = isGoal ? 10 : 6;
-  const petalColor = isGoal
-    ? bloom
+  const petalColor = !bloom
+    ? "rgba(255,150,40,0.75)"
+    : isGoal
       ? "rgba(240,246,255,0.95)"
-      : "rgba(190,205,235,0.55)"
-    : bloom
-      ? "rgba(255,246,220,0.95)"
-      : "rgba(230,190,140,0.55)";
+      : "rgba(255,225,170,0.95)";
   for (let i = 0; i < outerPetals; i++) {
     ctx.save();
     ctx.rotate((i / outerPetals) * Math.PI * 2);
@@ -3677,7 +3770,7 @@ function drawFlower(
     ctx.stroke();
   }
 
-  ctx.fillStyle = isGoal ? (bloom ? "#ffffff" : "#dbe6ff") : bloom ? "#fff7e3" : "#e0b878";
+  ctx.fillStyle = !bloom ? "#ff9d2e" : isGoal ? "#ffffff" : "#fff2d9";
   ctx.beginPath();
   ctx.arc(0, 0, r * 0.38, 0, Math.PI * 2);
   ctx.fill();
@@ -4049,6 +4142,29 @@ function drawCornerStoneEdge(
   ctx.restore();
 }
 
+// A bright, rippling specular line standing in for the water's actual
+// surface — shared by the flood and drain transition effects so both read
+// as "the water level is moving right now" from the line alone, even
+// before the tinted fill or particles are noticed. `t` is the transition's
+// normalized 0..1 progress (see drawTransitionEffect); `strength` scales
+// both the line's opacity and how far it wobbles.
+function drawWaterline(ctx: CanvasRenderingContext2D, viewWidth: number, waterY: number, t: number, strength: number) {
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.strokeStyle = `rgba(220,240,250,${(0.6 * strength).toFixed(3)})`;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  const segments = 24;
+  for (let i = 0; i <= segments; i++) {
+    const x = (i / segments) * viewWidth;
+    const wobble = Math.sin(t * 40 + i * 0.9) * 3 * strength + Math.sin(t * 17 + i * 2.3) * 1.5 * strength;
+    if (i === 0) ctx.moveTo(x, waterY + wobble);
+    else ctx.lineTo(x, waterY + wobble);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
 // A full-screen cosmetic pass for main.ts's fixed pause between two stages —
 // the literal cause the player watches happen before the next stage's effect
 // appears underfoot. `t` is 0..1 progress through that pause; every shape
@@ -4087,8 +4203,8 @@ function drawTransitionEffect(
     // one continuous cause-and-effect: the pump's crack widening and
     // flaring first, then the water actually rising, and, right in the
     // middle of the rise, the one lantern's own cage cracking as its
-    // trapped light escapes upward and cools green — the exact instant a
-    // wisp is born, tied to the flood that causes it rather than a
+    // trapped light escapes upward and re-forms as a wisp — still warning
+    // red, just unhoused — tied to the flood that causes it rather than a
     // separate unexplained cutscene.
     const pump = stage.structures.find((s) => s.kind === "irrigationPump");
     if (pump && t < 0.35) {
@@ -4111,18 +4227,27 @@ function drawTransitionEffect(
     const riseT = Math.min(1, t / 0.65);
     const waterY = viewHeight * (1 - riseT * 0.62);
     const tint = ctx.createLinearGradient(0, waterY, 0, viewHeight);
-    tint.addColorStop(0, "rgba(120,180,200,0.05)");
-    tint.addColorStop(1, "rgba(30,55,70,0.55)");
+    tint.addColorStop(0, "rgba(140,200,220,0.16)");
+    tint.addColorStop(0.08, "rgba(80,150,180,0.32)");
+    tint.addColorStop(1, "rgba(20,45,60,0.6)");
     ctx.fillStyle = tint;
     ctx.fillRect(0, waterY, viewWidth, viewHeight - waterY);
-    ctx.strokeStyle = "rgba(200,225,235,0.35)";
-    ctx.lineWidth = 3;
-    for (let i = 0; i < 3; i++) {
-      const wobble = Math.sin(t * 14 + i * 2) * (4 - i);
+    drawWaterline(ctx, viewWidth, waterY, t, Math.max(0.25, riseT));
+
+    // Bubbles rising through the flooded band -- a looping motion cue so
+    // the level change reads as a continuous physical rise, not a tinted
+    // rectangle sliding up behind a static line.
+    for (let i = 0; i < 8; i++) {
+      const bx = hash01(i * 7 + 1) * viewWidth;
+      const cycle = 0.16 + hash01(i * 3 + 2) * 0.1;
+      const bt = ((t + hash01(i * 5 + 3)) % cycle) / cycle;
+      const by = viewHeight - bt * (viewHeight - waterY) * 0.95;
+      if (by < waterY) continue;
+      const ba = (1 - bt) * 0.5 * riseT;
+      ctx.fillStyle = `rgba(210,235,245,${ba.toFixed(3)})`;
       ctx.beginPath();
-      ctx.moveTo(0, waterY + wobble - i * 5);
-      ctx.lineTo(viewWidth, waterY - wobble - i * 5);
-      ctx.stroke();
+      ctx.arc(bx, by, Math.max(1, 2.2 * (1 - bt * 0.4)), 0, Math.PI * 2);
+      ctx.fill();
     }
 
     const lantern = stage.hazards.find((h) => h.kind === "lantern");
@@ -4131,7 +4256,7 @@ function drawTransitionEffect(
       const p = worldToScreen(camera, lantern.pos);
       if (escT > 0 && escT < 1) {
         const riseY = p.y - escT * 70 * camera.scale;
-        const rgb = blendChannels([255, 170, 90], [150, 255, 210], escT);
+        const rgb = blendChannels([255, 80, 35], [255, 50, 50], escT);
         const alpha = 0.7 * (1 - Math.abs(escT - 0.5) * 1.4);
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
@@ -4140,20 +4265,47 @@ function drawTransitionEffect(
       } else if (escT >= 1) {
         ctx.save();
         ctx.globalCompositeOperation = "lighter";
-        glow(ctx, { x: p.x, y: p.y - 70 * camera.scale }, 20 * camera.scale, "rgba(150,255,210,0.5)");
+        glow(ctx, { x: p.x, y: p.y - 70 * camera.scale }, 20 * camera.scale, "rgba(255,50,50,0.5)");
         ctx.restore();
       }
     }
   } else if (effect === "drain") {
-    // The flood's mirror: the water wash receding back down and away as
-    // The Marsh hands off to The Ruins.
+    // The flood's mirror: the water visibly receding and draining away as
+    // The Marsh hands off to The Ruins -- a bright waterline sinking down
+    // the frame, a damp band left behind where the water just was, and
+    // droplets falling off the retreating edge, so "the water is leaving"
+    // reads on its own without needing the pump/lantern beats flood gets.
     const drainT = Math.min(1, t / 0.85);
+    const startY = viewHeight * 0.38;
     const waterY = viewHeight * (0.38 + drainT * 0.62);
     const tint = ctx.createLinearGradient(0, waterY, 0, viewHeight);
-    tint.addColorStop(0, "rgba(120,180,200,0.05)");
-    tint.addColorStop(1, "rgba(30,55,70,0.4)");
+    tint.addColorStop(0, "rgba(140,200,220,0.16)");
+    tint.addColorStop(0.08, "rgba(80,150,180,0.32)");
+    tint.addColorStop(1, "rgba(20,45,60,0.45)");
     ctx.fillStyle = tint;
     ctx.fillRect(0, waterY, viewWidth, viewHeight - waterY);
+    drawWaterline(ctx, viewWidth, waterY, t, Math.max(0.2, 1 - drainT * 0.5));
+
+    const dampHeight = Math.max(0, waterY - startY);
+    if (dampHeight > 0) {
+      const dampAlpha = 0.3 * (1 - drainT * 0.6);
+      ctx.fillStyle = `rgba(30,55,70,${dampAlpha.toFixed(3)})`;
+      ctx.fillRect(0, startY, viewWidth, dampHeight);
+    }
+
+    for (let i = 0; i < 6; i++) {
+      const dx = hash01(i * 11 + 5) * viewWidth;
+      const cycle = 0.14 + hash01(i * 4 + 6) * 0.08;
+      const dtLocal = ((t + hash01(i * 6 + 7)) % cycle) / cycle;
+      const dropStart = startY + hash01(i * 9 + 8) * dampHeight;
+      const dy = dropStart + dtLocal * viewHeight * 0.12;
+      const da = (1 - dtLocal) * 0.5 * (1 - drainT * 0.3);
+      if (da <= 0.01 || dy < 0) continue;
+      ctx.fillStyle = `rgba(200,225,235,${da.toFixed(3)})`;
+      ctx.beginPath();
+      ctx.ellipse(dx, dy, 1.2, 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
   } else if (effect === "reveal") {
     // The ruin's broken landmark silhouette parts and the moon brightens
     // early — foreshadowing the sanctuary the next stage centers on.
@@ -4177,10 +4329,23 @@ function drawTransitionEffect(
 // A short memory-return across the ending: the four earlier stages' own
 // hero landmarks, briefly whole again, in a row along the top of frame —
 // "restored" readings of real stage data (their own sky colors, their own
-// landmark motif), not new bespoke art. Each panel fades in and back out on
-// its own slice of a fixed window before the final text appears.
+// landmark motif), not new bespoke art. Panels arrive staggered rather than
+// strictly sequential (each starts before the last one has fully faded), so
+// the sequence reads as one continuous recollection instead of four
+// isolated blinks, and each holds on screen long enough to actually
+// recognize the place before fading, marked by a brief camera-flash cue and
+// a subtle zoom-to-focus as it arrives.
 const ENDING_MONTAGE_START = 4.4;
-const ENDING_MONTAGE_PANEL_DURATION = 0.65;
+const ENDING_MONTAGE_STAGGER = 1.05;
+const ENDING_MONTAGE_FADE_IN = 0.35;
+const ENDING_MONTAGE_HOLD = 1.0;
+const ENDING_MONTAGE_FADE_OUT = 0.5;
+const ENDING_MONTAGE_PANEL_DURATION = ENDING_MONTAGE_FADE_IN + ENDING_MONTAGE_HOLD + ENDING_MONTAGE_FADE_OUT;
+
+function smoothstep(x: number) {
+  const c = Math.min(1, Math.max(0, x));
+  return c * c * (3 - 2 * c);
+}
 
 function drawEndingMontage(ctx: CanvasRenderingContext2D, viewWidth: number, viewHeight: number, phaseTimer: number, timeSec: number) {
   const panelSize = Math.min(viewWidth, viewHeight) * 0.13;
@@ -4190,16 +4355,30 @@ function drawEndingMontage(ctx: CanvasRenderingContext2D, viewWidth: number, vie
   const y = viewHeight * 0.12;
 
   for (let i = 0; i < 4; i++) {
-    const panelStart = ENDING_MONTAGE_START + i * ENDING_MONTAGE_PANEL_DURATION;
-    const localT = (phaseTimer - panelStart) / ENDING_MONTAGE_PANEL_DURATION;
-    if (localT < 0 || localT > 1) continue;
-    const envelope = Math.sin(Math.PI * Math.min(1, Math.max(0, localT)));
+    const panelStart = ENDING_MONTAGE_START + i * ENDING_MONTAGE_STAGGER;
+    const localT = phaseTimer - panelStart;
+    if (localT < 0 || localT > ENDING_MONTAGE_PANEL_DURATION) continue;
+
+    let envelope: number;
+    if (localT < ENDING_MONTAGE_FADE_IN) envelope = smoothstep(localT / ENDING_MONTAGE_FADE_IN);
+    else if (localT < ENDING_MONTAGE_FADE_IN + ENDING_MONTAGE_HOLD) envelope = 1;
+    else envelope = 1 - smoothstep((localT - ENDING_MONTAGE_FADE_IN - ENDING_MONTAGE_HOLD) / ENDING_MONTAGE_FADE_OUT);
     if (envelope <= 0.01) continue;
+
+    // Subtle zoom-to-focus: eases from slightly small to full size across
+    // the fade-in, then holds -- the frame itself stays put (drawn below,
+    // untransformed) while the memory inside settles into place.
+    const zoom = 0.9 + 0.1 * smoothstep(Math.min(1, localT / ENDING_MONTAGE_FADE_IN));
 
     const stage = STAGES[i];
     const x = startX + i * (panelSize + gap);
+    const cx = x + panelSize / 2;
+    const cy = y + panelSize / 2;
     ctx.save();
     ctx.globalAlpha = envelope;
+    ctx.translate(cx, cy);
+    ctx.scale(zoom, zoom);
+    ctx.translate(-cx, -cy);
     ctx.beginPath();
     ctx.rect(x, y, panelSize, panelSize);
     ctx.clip();
@@ -4235,6 +4414,18 @@ function drawEndingMontage(ctx: CanvasRenderingContext2D, viewWidth: number, vie
         break;
     }
     ctx.restore();
+
+    // Camera-flash: a brief bright pulse right as the memory surfaces,
+    // marking the beat instead of letting the panel just quietly appear.
+    if (localT < ENDING_MONTAGE_FADE_IN) {
+      const flashT = localT / ENDING_MONTAGE_FADE_IN;
+      const flashAlpha = (1 - flashT) * 0.55 * envelope;
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = `rgba(255,255,255,${flashAlpha.toFixed(3)})`;
+      ctx.fillRect(x, y, panelSize, panelSize);
+      ctx.restore();
+    }
 
     ctx.save();
     ctx.globalAlpha = envelope * 0.5;
